@@ -22,40 +22,59 @@ A browser-based multi-track audio editor built with React, TypeScript, and the W
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         App.tsx                              │
-│  ┌─────────────────────┐    ┌─────────────────────────────┐ │
-│  │   TransportControls │    │      Redux Store            │ │
-│  │   (Header/Toolbar)  │◄──►│  ┌─────────┐ ┌───────────┐  │ │
-│  └─────────────────────┘    │  │transport│ │  tracks   │  │ │
-│                              │  │ Slice   │ │  Slice    │  │ │
-│  ┌──────────────────────────┐│  └────┬────┘ └─────┬─────┘  │ │
-│  │      Workspace           ││       │           │        │ │
-│  │  ┌────────┐ ┌──────────┐ ││       ▼           ▼        │ │
-│  │  │Controls│ │ Waveform │ ││  ┌─────────────────────┐   │ │
-│  │  │ Panel  │ │  Canvas  │◄┼──│  audioMiddleware    │   │ │
-│  │  │        │ │          │ ││  └──────────┬──────────┘   │ │
-│  │  │TrackCon│ │(Shared)  │ ││             │              │ │
-│  │  │ trols  │ │          │ ││             ▼              │ │
-│  │  └────────┘ └──────────┘ ││  ┌─────────────────────┐   │ │
-│  └──────────────────────────┘│  │   AudioEngine       │   │ │
-│                              │  │  (Web Audio API)    │   │ │
-│                              │  │  - GainNodes/track  │   │ │
-│                              │  │  - Playback control │   │ │
-│                              │  └─────────────────────┘   │ │
-│                              └─────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph UI["🖥️ UI Layer"]
+        TC[TransportControls]
+        TCL[TrackControls]
+        WC[WaveformCanvas]
+    end
+
+    subgraph State["📦 Redux Store"]
+        TS[transportSlice]
+        TKS[tracksSlice]
+        AM[audioMiddleware]
+    end
+
+    subgraph Audio["🔊 Audio Layer"]
+        AE[AudioEngine]
+        WA[Web Audio API]
+    end
+
+    TC -->|dispatch play/pause| TS
+    TC -->|dispatch addTrack| TKS
+    TCL -->|dispatch volume/mute| TKS
+    WC -->|reads currentTime| AE
+    
+    TS --> AM
+    TKS --> AM
+    AM -->|controls| AE
+    AE --> WA
 ```
 
 ### Data Flow
 
-1. **User uploads audio** → `TransportControls` dispatches `addTrack` + `loadTrackAudio`
-2. **Redux thunk** loads audio via `AudioEngine.loadTrack()` → stores `AudioBuffer` + `GainNode`
-3. **Peaks extracted** → stored in Redux state → triggers `WaveformCanvas` redraw
-4. **User clicks Play** → `audioMiddleware` intercepts → calls `AudioEngine.play()`
-5. **User adjusts volume/mute** → middleware syncs `GainNode` values
-6. **Canvas reads** `AudioEngine.currentTime` directly via `requestAnimationFrame`
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant TC as TransportControls
+    participant R as Redux
+    participant MW as Middleware
+    participant AE as AudioEngine
+
+    U->>TC: Upload audio file
+    TC->>R: dispatch(addTrack)
+    TC->>R: dispatch(loadTrackAudio)
+    R->>AE: loadTrack(id, url)
+    AE-->>R: peaks + buffer
+    R-->>TC: Update UI
+    
+    U->>TC: Click Play
+    TC->>R: dispatch(play)
+    R->>MW: intercept action
+    MW->>AE: play()
+    AE-->>U: Audio plays 🔊
+```
 
 ---
 
