@@ -19,7 +19,7 @@ const initialState: TracksState = {
 // Async thunk for loading track audio
 export const loadTrackAudio = createAsyncThunk(
   'tracks/loadTrackAudio',
-  async ({ id, url, name }: { id: string; url: string; name: string }, { dispatch }) => {
+  async ({ id, url }: { id: string; url: string }) => {
     try {
       const engine = AudioEngine.getInstance();
       const buffer = await engine.loadTrack(id, url);

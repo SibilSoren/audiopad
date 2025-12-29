@@ -117,7 +117,7 @@ export class AudioEngine {
   }
 
   // --- Internal Helpers ---
-  private createAndStartSource(id: string, track: TrackNode) {
+  private createAndStartSource(_id: string, track: TrackNode) {
     const source = this.audioContext.createBufferSource();
     source.buffer = track.buffer;
     source.connect(track.gainNode); // Connect to GainNode, not destination

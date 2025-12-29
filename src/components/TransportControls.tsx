@@ -73,7 +73,7 @@ export const TransportControls = ({ onHelpClick }: TransportControlsProps) => {
             const name = file.name.replace(/\.[^/.]+$/, '');
             
             dispatch(addTrack({ id, name }));
-            dispatch(loadTrackAudio({ id, url, name }));
+            dispatch(loadTrackAudio({ id, url }));
             extractAlbumArt(file, id);
             
             toast.success(`"${name}" added`, {
