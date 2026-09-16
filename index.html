@@ -4,7 +4,37 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AudioPad</title>
+
+    <title>AudioPad — Multi-track audio editor in the browser</title>
+    <meta
+      name="description"
+      content="A browser-based multi-track audio editor built with React, TypeScript and the Web Audio API. Record, layer and mix tracks with waveform visualisation — no install required."
+    />
+
+    <!-- Open Graph: without these, every share on LinkedIn/Twitter/WhatsApp/Slack
+         renders as a bare URL with no title, description or image. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://audio-pad.netlify.app/" />
+    <meta property="og:site_name" content="AudioPad" />
+    <meta property="og:title" content="AudioPad — Multi-track audio editor in the browser" />
+    <meta
+      property="og:description"
+      content="A browser-based multi-track audio editor built with React, TypeScript and the Web Audio API. Record, layer and mix tracks with waveform visualisation — no install required."
+    />
+    <meta property="og:image" content="https://audio-pad.netlify.app/logo.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:image:alt" content="AudioPad logo" />
+
+    <!-- summary, not summary_large_image: logo.png is square (512x512), so a large
+         card would letterbox it badly. -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="AudioPad — Multi-track audio editor in the browser" />
+    <meta
+      name="twitter:description"
+      content="Built with React, TypeScript and the Web Audio API. Record, layer and mix tracks with waveform visualisation."
+    />
+    <meta name="twitter:image" content="https://audio-pad.netlify.app/logo.png" />
   </head>
   <body>
     <div id="root"></div>
