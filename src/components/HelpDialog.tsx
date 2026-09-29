@@ -48,6 +48,13 @@ export const HelpDialog = ({ isOpen, onClose }: HelpDialogProps) => {
             <li>A split copies no audio — both halves share one buffer</li>
           </ul>
 
+          <h3>Navigating</h3>
+          <ul>
+            <li>Scroll or swipe to move along the timeline</li>
+            <li><kbd>Ctrl</kbd> or <kbd>Cmd</kbd> + scroll to zoom around the pointer</li>
+            <li>Or use the zoom buttons in the header</li>
+          </ul>
+
           <h3>Keyboard</h3>
           <ul>
             <li><kbd>Space</kbd> play / pause</li>

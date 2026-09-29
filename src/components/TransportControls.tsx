@@ -9,9 +9,11 @@ import { formatTime } from '../lib/time';
 
 interface TransportControlsProps {
   onHelpClick: () => void;
+  /** Slot for the zoom controls, which need the timeline's measured width. */
+  children?: React.ReactNode;
 }
 
-export const TransportControls = ({ onHelpClick }: TransportControlsProps) => {
+export const TransportControls = ({ onHelpClick, children }: TransportControlsProps) => {
   const dispatch = useAppDispatch();
   const isPlaying = useAppSelector((state) => state.transport.isPlaying);
   const { addFiles } = useAudioFiles();
@@ -85,6 +87,8 @@ export const TransportControls = ({ onHelpClick }: TransportControlsProps) => {
           }}
         />
       </label>
+
+      {children}
 
       <div className="header-title">
         <img src="/logo.png" alt="" className="header-logo" />
