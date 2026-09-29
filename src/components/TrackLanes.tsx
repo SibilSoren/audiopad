@@ -254,6 +254,12 @@ export const TrackLanes = ({ width }: { width: number }) => {
     <canvas
       ref={canvasRef}
       className="lanes"
+      role="application"
+      aria-label={
+        tracks.length === 0
+          ? 'Timeline, empty. Drop audio files to add tracks.'
+          : `Timeline with ${tracks.length} track${tracks.length === 1 ? '' : 's'}`
+      }
       style={{
         cursor: drag.isDragging
           ? drag.zone === 'body'

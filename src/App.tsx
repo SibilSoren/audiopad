@@ -51,7 +51,7 @@ function App() {
   );
 
   const [showHelp, setShowHelp] = useState(
-    () => !localStorage.getItem('audiowave-visited')
+    () => !localStorage.getItem('audiopad-seen-intro')
   );
   const [isDragging, setIsDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -78,7 +78,7 @@ function App() {
   };
 
   useEffect(() => {
-    localStorage.setItem('audiowave-visited', 'true');
+    localStorage.setItem('audiopad-seen-intro', 'true');
   }, []);
 
   useEffect(() => {

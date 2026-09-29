@@ -103,11 +103,33 @@ export const TimelineRuler = ({ width }: { width: number }) => {
     dispatch(seek(Math.max(0, Math.min(time, duration))))
   }
 
+  /** Arrow keys nudge, shift jumps a larger step, Home and End go to the edges. */
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const current = AudioEngine.getInstance().currentTime
+    const step = e.shiftKey ? 10 : 1
+
+    const next =
+      e.key === 'ArrowLeft'
+        ? current - step
+        : e.key === 'ArrowRight'
+          ? current + step
+          : e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? duration
+              : null
+
+    if (next === null) return
+    e.preventDefault()
+    dispatch(seek(Math.max(0, Math.min(next, duration))))
+  }
+
   return (
     <canvas
       ref={canvasRef}
       className="ruler"
       onClick={onClick}
+      onKeyDown={onKeyDown}
       role="slider"
       tabIndex={0}
       aria-label="Timeline position"
