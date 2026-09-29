@@ -19,6 +19,7 @@ import { TrackLanes } from './components/TrackLanes';
 import { TimelineScrollbar } from './components/TimelineScrollbar';
 import { ZoomControls } from './components/ZoomControls';
 import { UndoControls } from './components/UndoControls';
+import { ExportButton } from './components/ExportButton';
 import { HelpDialog } from './components/HelpDialog';
 import {
   fitZoom,
@@ -223,6 +224,7 @@ function App() {
       <TransportControls onHelpClick={() => setShowHelp(true)}>
         <UndoControls />
         <ZoomControls width={width} />
+        <ExportButton />
       </TransportControls>
 
       <div className="workspace">

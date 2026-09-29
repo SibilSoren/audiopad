@@ -50,6 +50,13 @@ export const HelpDialog = ({ isOpen, onClose }: HelpDialogProps) => {
             <li>A split copies no audio — both halves share one buffer</li>
           </ul>
 
+          <h3>Exporting</h3>
+          <ul>
+            <li><strong>Export</strong> renders the mix to a 16-bit WAV</li>
+            <li>Rendered offline, faster than real time, through the same
+            graph you hear — faders, mutes, solo, fades and the limiter</li>
+          </ul>
+
           <h3>Navigating</h3>
           <ul>
             <li>Drag the scrollbar under the timeline, or swipe sideways</li>

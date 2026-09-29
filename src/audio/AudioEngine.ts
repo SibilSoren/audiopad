@@ -1,6 +1,12 @@
 import { loadAudioBuffer } from './AudioUtils';
-import { scheduleClips, arrangementEnd } from './scheduling';
+import { arrangementEnd } from './scheduling';
 import { computeLevel, SILENT, type Level } from './levels';
+import {
+  scheduleClipSources,
+  configureLimiter,
+  renderArrangement,
+  type TrackMix,
+} from './renderGraph';
 import type { Clip } from '../models/types';
 
 /**
@@ -65,11 +71,7 @@ export class AudioEngine {
     // master bus with a limiter behind it.
     this.masterGain = this.audioContext.createGain();
     this.limiter = this.audioContext.createDynamicsCompressor();
-    this.limiter.threshold.value = -1;
-    this.limiter.knee.value = 0;
-    this.limiter.ratio.value = 20;
-    this.limiter.attack.value = 0.003;
-    this.limiter.release.value = 0.1;
+    configureLimiter(this.limiter);
 
     this.masterAnalyser = this.audioContext.createAnalyser();
     this.masterAnalyser.fftSize = ANALYSER_FFT;
@@ -283,63 +285,49 @@ export class AudioEngine {
    */
   private scheduleFrom(origin: number) {
     const position = origin - this.startTime;
-    const scheduled = scheduleClips(this.clips, position);
-    this.pendingEndings = scheduled.length;
 
-    for (const item of scheduled) {
-      const buffer = this.buffers.get(item.sourceId);
-      const nodes = this.tracks.get(item.trackId);
-      if (!buffer || !nodes) {
-        this.pendingEndings--;
-        continue;
-      }
-
-      const source = this.audioContext.createBufferSource();
-      source.buffer = buffer;
-
-      // Clip-level gain carries the fades, leaving the track fader free.
-      const clipGain = this.audioContext.createGain();
-      const startsAt = origin + item.delay;
-      const endsAt = startsAt + item.duration;
-
-      if (item.fadeIn > 0) {
-        clipGain.gain.setValueAtTime(0, startsAt);
-        clipGain.gain.linearRampToValueAtTime(
-          item.gain,
-          startsAt + Math.min(item.fadeIn, item.duration)
-        );
-      } else {
-        clipGain.gain.setValueAtTime(item.gain, startsAt);
-      }
-
-      if (item.fadeOut > 0) {
-        const fadeOutStart = Math.max(startsAt, endsAt - item.fadeOut);
-        clipGain.gain.setValueAtTime(item.gain, fadeOutStart);
-        clipGain.gain.linearRampToValueAtTime(0, endsAt);
-      }
-
-      source.connect(clipGain);
-      clipGain.connect(nodes.volumeGain);
-
-      source.onended = () => {
+    const sources = scheduleClipSources({
+      context: this.audioContext,
+      clips: this.clips,
+      buffers: this.buffers,
+      trackInput: (trackId) => this.tracks.get(trackId)?.volumeGain ?? null,
+      origin,
+      from: position,
+      onEnded: (source) => {
         this.activeSources.delete(source);
-        clipGain.disconnect();
         this.pendingEndings--;
         // Only a natural finish reaches here: stopAllSources clears the
         // handler before stopping, so pausing never looks like the end.
         if (this.pendingEndings <= 0 && this.isPlaying) {
           this.handleArrangementEnd();
         }
-      };
+      },
+    });
 
-      source.start(startsAt, item.offset, item.duration);
+    this.pendingEndings = sources.length;
+    for (const source of sources) {
       this.activeSources.add(source);
     }
+  }
 
-    // Nothing to play (empty project, or every clip is behind us).
-    if (this.pendingEndings <= 0) {
-      this.pendingEndings = 0;
-    }
+  /**
+   * Render the arrangement offline.
+   *
+   * Uses the same graph builder as live playback, so the file matches what
+   * was heard rather than approximating it.
+   */
+  public renderMix(
+    tracks: readonly TrackMix[],
+    masterVolume: number
+  ): Promise<AudioBuffer> {
+    return renderArrangement({
+      clips: this.clips,
+      tracks,
+      buffers: this.buffers,
+      masterVolume,
+      duration: this.duration,
+      sampleRate: this.audioContext.sampleRate,
+    });
   }
 
   private handleArrangementEnd() {
@@ -355,6 +343,7 @@ export class AudioEngine {
       source.onended = null;
       try {
         source.stop();
+        source.disconnect();
       } catch {
         // Already stopped, or never started.
       }
