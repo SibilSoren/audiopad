@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { ToastContainer } from 'react-toastify';
 import { FaMusic } from 'react-icons/fa';
 
@@ -15,12 +15,14 @@ import { TrackControls } from './components/TrackControls';
 import { MasterControls } from './components/MasterControls';
 import { TimelineRuler } from './components/TimelineRuler';
 import { TrackLanes } from './components/TrackLanes';
+import { TimelineScrollbar } from './components/TimelineScrollbar';
 import { ZoomControls } from './components/ZoomControls';
 import { HelpDialog } from './components/HelpDialog';
 import {
   fitZoom,
   clampViewStart,
   zoomAround,
+  visibleDuration,
   RULER_HEIGHT,
   type Viewport,
 } from './lib/viewport';
@@ -40,7 +42,10 @@ function App() {
   const { addFiles } = useAudioFiles();
 
   const { ref: timelineRef, width } = useElementWidth<HTMLDivElement>();
-  const view: Viewport = { viewStart, pixelsPerSecond, width };
+  const view: Viewport = useMemo(
+    () => ({ viewStart, pixelsPerSecond, width }),
+    [viewStart, pixelsPerSecond, width]
+  );
 
   const [showHelp, setShowHelp] = useState(
     () => !localStorage.getItem('audiowave-visited')
@@ -89,6 +94,15 @@ function App() {
     dispatch(markAutoFitted());
   }, [hasAutoFitted, tracks.length, width, duration, dispatch]);
 
+  const scrollBy = useCallback(
+    (seconds: number) => {
+      dispatch(
+        setView({ viewStart: clampViewStart(viewStart + seconds, duration, view) })
+      );
+    },
+    [dispatch, viewStart, duration, view]
+  );
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return;
@@ -109,6 +123,22 @@ function App() {
             dispatch(splitClipAt(selectedClipId, AudioEngine.getInstance().currentTime));
           }
           break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          scrollBy(-visibleDuration(view) * (e.shiftKey ? 0.9 : 0.1));
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          scrollBy(visibleDuration(view) * (e.shiftKey ? 0.9 : 0.1));
+          break;
+        case 'Home':
+          e.preventDefault();
+          dispatch(setView({ viewStart: 0 }));
+          break;
+        case 'End':
+          e.preventDefault();
+          dispatch(setView({ viewStart: clampViewStart(duration, duration, view) }));
+          break;
         case 'Delete':
         case 'Backspace':
           if (selectedClipId) {
@@ -119,7 +149,7 @@ function App() {
           break;
       }
     },
-    [dispatch, isPlaying, selectedClipId]
+    [dispatch, isPlaying, selectedClipId, scrollBy, view, duration]
   );
 
   useEffect(() => {
@@ -128,9 +158,12 @@ function App() {
   }, [handleKeyDown]);
 
   /**
-   * Ctrl or Cmd plus wheel zooms around the pointer; otherwise the wheel
-   * scrolls the timeline horizontally, which is what a trackpad swipe
-   * already produces as deltaX.
+   * Ctrl or Cmd plus wheel zooms around the pointer. A horizontal gesture, or
+   * shift plus wheel, scrolls the timeline.
+   *
+   * Plain vertical wheel is deliberately left alone so the browser can scroll
+   * the lanes: mapping it to horizontal movement as well meant one gesture
+   * moved both axes at once.
    */
   const onWheel = (e: React.WheelEvent) => {
     if (width === 0) return;
@@ -142,13 +175,9 @@ function App() {
       return;
     }
 
-    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-    if (delta === 0) return;
-    dispatch(
-      setView({
-        viewStart: clampViewStart(viewStart + delta / pixelsPerSecond, duration, view),
-      })
-    );
+    const horizontal = e.shiftKey ? e.deltaY : e.deltaX;
+    if (horizontal === 0) return;
+    scrollBy(horizontal / pixelsPerSecond);
   };
 
   const onDragEnter = (e: React.DragEvent) => {
@@ -219,6 +248,7 @@ function App() {
           >
             <TrackLanes width={width} />
           </div>
+          <TimelineScrollbar width={width} />
         </div>
       </div>
 

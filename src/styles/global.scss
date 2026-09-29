@@ -671,3 +671,38 @@ input[type='range'] {
   }
 }
 
+
+/* Timeline scrollbar ------------------------------------------------------ */
+
+/* An empty element as wide as the arrangement. The lane canvas is always
+   viewport-sized, so this is what gives the browser something to scroll and
+   the user something to drag. */
+.hscroll {
+  flex-shrink: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--tone-1);
+  border-top: 1px solid var(--tone-line);
+
+  &::-webkit-scrollbar {
+    height: 12px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: var(--tone-1);
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--tone-3);
+    border: 3px solid var(--tone-1);
+    border-radius: 6px;
+
+    &:hover {
+      background: var(--tone-line);
+    }
+  }
+}
+
+.hscroll__content {
+  height: 1px;
+}

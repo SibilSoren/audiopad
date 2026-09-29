@@ -50,9 +50,11 @@ export const HelpDialog = ({ isOpen, onClose }: HelpDialogProps) => {
 
           <h3>Navigating</h3>
           <ul>
-            <li>Scroll or swipe to move along the timeline</li>
-            <li><kbd>Ctrl</kbd> or <kbd>Cmd</kbd> + scroll to zoom around the pointer</li>
-            <li>Or use the zoom buttons in the header</li>
+            <li>Drag the scrollbar under the timeline, or swipe sideways</li>
+            <li><kbd>Shift</kbd> + scroll also moves along the timeline</li>
+            <li><kbd>Ctrl</kbd> or <kbd>Cmd</kbd> + scroll zooms around the pointer</li>
+            <li><kbd>←</kbd> <kbd>→</kbd> to nudge, with <kbd>Shift</kbd> for a full page</li>
+            <li><kbd>Home</kbd> and <kbd>End</kbd> jump to either end</li>
           </ul>
 
           <h3>Keyboard</h3>
