@@ -2,6 +2,7 @@ import { FaTrash, FaMusic } from 'react-icons/fa';
 import { useAppDispatch, useAppSelector } from '../store/store';
 import { toggleMute, toggleSolo, setVolume, removeTrack } from '../store/tracksSlice';
 import { clampVolume } from '../audio/mixing';
+import { LevelMeter } from './LevelMeter';
 
 interface TrackControlsProps {
   id: string;
@@ -57,6 +58,10 @@ export const TrackControls = ({ id }: TrackControlsProps) => {
         >
           S
         </button>
+      </div>
+
+      <div className="track-controls__meter">
+        <LevelMeter target={id} segments={12} label={`${track.name} level`} />
       </div>
 
       <div className="track-controls__volume">

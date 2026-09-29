@@ -9,6 +9,7 @@ import {
   removeTrack,
   addAudioFile,
 } from '../tracksSlice';
+import { setMasterVolume } from '../mixerSlice';
 import type { AudioTrack, Clip } from '../../models/types';
 
 interface TracksSliceState {
@@ -77,6 +78,8 @@ export const audioMiddleware: Middleware<object, AppState> =
       // scheduled onto them.
       syncMixer(state);
       syncClips(state);
+    } else if (setMasterVolume.match(action)) {
+      engine.setMasterVolume(action.payload);
     } else if (removeTrack.match(action)) {
       engine.removeTrack(action.payload);
       syncClips(state);

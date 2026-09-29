@@ -94,6 +94,35 @@ export class MockCompressorNode {
   disconnect() {}
 }
 
+export class MockAnalyserNode {
+  fftSize = 2048
+  smoothingTimeConstant = 0.8
+  readonly connectedTo: unknown[] = []
+  /** Tests set this to feed a signal into the meter. */
+  samples: Float32Array | null = null
+
+  get frequencyBinCount() {
+    return this.fftSize / 2
+  }
+
+  connect(target: unknown) {
+    this.connectedTo.push(target)
+    return target
+  }
+
+  disconnect() {}
+
+  getFloatTimeDomainData(target: Float32Array) {
+    if (!this.samples) {
+      target.fill(0)
+      return
+    }
+    for (let i = 0; i < target.length; i++) {
+      target[i] = this.samples[i % this.samples.length]
+    }
+  }
+}
+
 export class MockAudioContext {
   currentTime = 0
   state: "running" | "suspended" = "running"
@@ -101,11 +130,18 @@ export class MockAudioContext {
   readonly gainNodes: MockGainNode[] = []
   readonly sources: MockBufferSource[] = []
   readonly compressors: MockCompressorNode[] = []
+  readonly analysers: MockAnalyserNode[] = []
 
   createGain() {
     const node = new MockGainNode()
     this.gainNodes.push(node)
     return node as unknown as GainNode
+  }
+
+  createAnalyser() {
+    const node = new MockAnalyserNode()
+    this.analysers.push(node)
+    return node as unknown as AnalyserNode
   }
 
   createDynamicsCompressor() {

@@ -1,5 +1,6 @@
 import { loadAudioBuffer } from './AudioUtils';
 import { scheduleClips, arrangementEnd } from './scheduling';
+import { computeLevel, SILENT, type Level } from './levels';
 import type { Clip } from '../models/types';
 
 /**
@@ -14,6 +15,8 @@ import type { Clip } from '../models/types';
 interface TrackNodes {
   volumeGain: GainNode;
   muteGain: GainNode;
+  /** Post-fader and post-mute, so the meter shows what is actually heard. */
+  analyser: AnalyserNode;
 }
 
 /** How far ahead of `currentTime` playback is scheduled, so every clip in a
@@ -22,6 +25,9 @@ const SCHEDULE_LOOKAHEAD = 0.05;
 
 /** Time constant for fader moves - long enough to avoid a click. */
 const RAMP = 0.05;
+
+/** Meter window. Small enough to stay responsive to transients. */
+const ANALYSER_FFT = 1024;
 
 export class AudioEngine {
   private static instance: AudioEngine;
@@ -34,6 +40,10 @@ export class AudioEngine {
 
   private masterGain: GainNode;
   private limiter: DynamicsCompressorNode;
+  private masterAnalyser: AnalyserNode;
+  /** Reused between frames: allocating a Float32Array per meter read at
+   *  60fps is a needless pressure on the garbage collector. */
+  private levelBuffer: Float32Array<ArrayBuffer>;
 
   private activeSources: Set<AudioBufferSourceNode> = new Set();
   private pendingEndings = 0;
@@ -61,8 +71,14 @@ export class AudioEngine {
     this.limiter.attack.value = 0.003;
     this.limiter.release.value = 0.1;
 
+    this.masterAnalyser = this.audioContext.createAnalyser();
+    this.masterAnalyser.fftSize = ANALYSER_FFT;
+    this.levelBuffer = new Float32Array(ANALYSER_FFT);
+
+    // Metered after the limiter, so the master shows the true output.
     this.masterGain.connect(this.limiter);
-    this.limiter.connect(this.audioContext.destination);
+    this.limiter.connect(this.masterAnalyser);
+    this.masterAnalyser.connect(this.audioContext.destination);
   }
 
   public static getInstance(): AudioEngine {
@@ -105,11 +121,14 @@ export class AudioEngine {
 
     const volumeGain = this.audioContext.createGain();
     const muteGain = this.audioContext.createGain();
+    const analyser = this.audioContext.createAnalyser();
+    analyser.fftSize = ANALYSER_FFT;
 
     volumeGain.connect(muteGain);
-    muteGain.connect(this.masterGain);
+    muteGain.connect(analyser);
+    analyser.connect(this.masterGain);
 
-    const nodes = { volumeGain, muteGain };
+    const nodes = { volumeGain, muteGain, analyser };
     this.tracks.set(trackId, nodes);
     return nodes;
   }
@@ -121,6 +140,7 @@ export class AudioEngine {
     this.stopSourcesForTrack(trackId);
     nodes.volumeGain.disconnect();
     nodes.muteGain.disconnect();
+    nodes.analyser.disconnect();
     this.tracks.delete(trackId);
   }
 
@@ -146,6 +166,20 @@ export class AudioEngine {
       this.audioContext.currentTime,
       RAMP
     );
+  }
+
+  // --- Metering ---
+
+  public getTrackLevel(trackId: string): Level {
+    const nodes = this.tracks.get(trackId);
+    if (!nodes) return SILENT;
+    nodes.analyser.getFloatTimeDomainData(this.levelBuffer);
+    return computeLevel(this.levelBuffer);
+  }
+
+  public getMasterLevel(): Level {
+    this.masterAnalyser.getFloatTimeDomainData(this.levelBuffer);
+    return computeLevel(this.levelBuffer);
   }
 
   public setMasterVolume(volume: number) {

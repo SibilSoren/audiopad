@@ -10,33 +10,41 @@ export const HelpDialog = ({ isOpen, onClose }: HelpDialogProps) => {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="help-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal__header">
-          <h2 className="modal__title">AudioPad</h2>
-          <button className="btn btn--icon btn--sm" onClick={onClose}>
-            <FaTimes />
+          <h2 className="modal__title" id="help-title">
+            AudioPad
+          </h2>
+          <button className="btn btn--icon" onClick={onClose} aria-label="Close">
+            <FaTimes aria-hidden="true" />
           </button>
         </div>
-        
+
         <div className="modal__content">
-          <h3>Quick Start</h3>
+          <h3>Quick start</h3>
           <ul>
-            <li>Click "+ Add Track" to upload audio files</li>
-            <li>Use Play/Pause/Stop controls to manage playback</li>
-            <li>Click on the waveform to seek</li>
+            <li>Drop audio files anywhere in the window, or use <strong>+ Add Tracks</strong></li>
+            <li>Several files at once is fine</li>
+            <li>Click the timeline to seek</li>
           </ul>
-          
-          <h3>Track Controls</h3>
+
+          <h3>Track controls</h3>
           <ul>
-            <li><strong>M</strong> — Mute/unmute the track</li>
-            <li><strong>S</strong> — Solo mode (plays only this track)</li>
-            <li><strong>Slider</strong> — Adjust track volume</li>
+            <li><strong>M</strong> — mute</li>
+            <li><strong>S</strong> — solo, silencing everything else</li>
+            <li><strong>Fader</strong> — track level, independent of mute</li>
           </ul>
-          
-          <h3>Keyboard Shortcuts</h3>
+
+          <h3>Keyboard</h3>
           <ul>
-            <li><kbd>Space</kbd> Play / Pause</li>
-            <li><kbd>Esc</kbd> Stop playback</li>
+            <li><kbd>Space</kbd> play / pause</li>
+            <li><kbd>Esc</kbd> stop</li>
           </ul>
         </div>
       </div>

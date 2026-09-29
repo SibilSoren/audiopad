@@ -41,10 +41,24 @@ afterEach(() => {
 })
 
 describe("AudioEngine - signal chain", () => {
-  it("routes the master bus through a limiter", async () => {
+  it("routes the master bus through a limiter and out", async () => {
     await freshEngine()
     expect(ctx.compressors).toHaveLength(1)
-    expect(ctx.compressors[0].connectedTo).toContain(ctx.destination)
+
+    // masterGain -> limiter -> masterAnalyser -> destination. Metering sits
+    // after the limiter so the master shows the true output.
+    const masterAnalyser = ctx.compressors[0].connectedTo[0]
+    expect(masterAnalyser).toBeDefined()
+    expect((masterAnalyser as { connectedTo: unknown[] }).connectedTo).toContain(
+      ctx.destination
+    )
+  })
+
+  it("meters each track after its fader and mute", async () => {
+    const engine = await freshEngine()
+    const before = ctx.analysers.length
+    engine.ensureTrack("t1")
+    expect(ctx.analysers.length).toBe(before + 1)
   })
 
   it("gives each track a separate volume and mute stage", async () => {
@@ -117,6 +131,40 @@ describe("AudioEngine - mixer", () => {
     const engine = await freshEngine()
     engine.setMasterVolume(0.6)
     expect(ctx.gainNodes.some((n) => n.gain.value === 0.6)).toBe(true)
+  })
+})
+
+describe("AudioEngine - metering", () => {
+  it("reports silence with no signal", async () => {
+    const engine = await withOneTrack()
+    const level = engine.getTrackLevel("t1")
+    expect(level.rms).toBe(0)
+    expect(level.peak).toBe(0)
+  })
+
+  it("reports silence for a track it does not know", async () => {
+    const engine = await freshEngine()
+    expect(engine.getTrackLevel("nope")).toEqual({ rms: 0, peak: 0 })
+  })
+
+  it("reads a signal from the track's analyser", async () => {
+    const engine = await withOneTrack()
+    // The track analyser is the most recently created one.
+    const analyser = ctx.analysers[ctx.analysers.length - 1]
+    analyser.samples = Float32Array.from([1, -1, 1, -1])
+
+    const level = engine.getTrackLevel("t1")
+    expect(level.peak).toBeCloseTo(1, 5)
+    expect(level.rms).toBeCloseTo(1, 5)
+  })
+
+  it("reads the master output", async () => {
+    const engine = await freshEngine()
+    // The master analyser is created first, in the constructor.
+    ctx.analysers[0].samples = Float32Array.from([0.5, -0.5])
+
+    const level = engine.getMasterLevel()
+    expect(level.peak).toBeCloseTo(0.5, 5)
   })
 })
 

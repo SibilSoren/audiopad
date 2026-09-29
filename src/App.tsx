@@ -9,6 +9,7 @@ import { AudioEngine } from './audio/AudioEngine';
 import { useAudioFiles } from './hooks/useAudioFiles';
 import { TransportControls } from './components/TransportControls';
 import { TrackControls } from './components/TrackControls';
+import { MasterControls } from './components/MasterControls';
 import { WaveformCanvas } from './components/WaveformCanvas';
 import { HelpDialog } from './components/HelpDialog';
 
@@ -19,6 +20,7 @@ function App() {
   const dispatch = useAppDispatch();
   const isPlaying = useAppSelector((state) => state.transport.isPlaying);
   const trackIds = useAppSelector(selectTrackIds);
+  const masterVolume = useAppSelector((state) => state.mixer.masterVolume);
   const { addFiles } = useAudioFiles();
 
   // Read during initialisation rather than setting state from an effect.
@@ -38,7 +40,11 @@ function App() {
   useEffect(() => {
     const engine = AudioEngine.getInstance();
     engine.setOnEnded(() => dispatch(playbackEnded()));
+    // The store starts at 0.8; without this the engine would sit at unity
+    // until the fader is first moved.
+    engine.setMasterVolume(masterVolume);
     return () => engine.setOnEnded(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch]);
 
   const handleKeyDown = useCallback(
@@ -107,6 +113,8 @@ function App() {
           ) : (
             trackIds.map((id) => <TrackControls key={id} id={id} />)
           )}
+
+          <MasterControls />
         </div>
 
         <WaveformCanvas />
