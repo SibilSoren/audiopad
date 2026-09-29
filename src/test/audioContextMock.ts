@@ -78,17 +78,40 @@ export class MockBufferSource {
   }
 }
 
+export class MockCompressorNode {
+  readonly threshold = new MockAudioParam()
+  readonly knee = new MockAudioParam()
+  readonly ratio = new MockAudioParam()
+  readonly attack = new MockAudioParam()
+  readonly release = new MockAudioParam()
+  readonly connectedTo: unknown[] = []
+
+  connect(target: unknown) {
+    this.connectedTo.push(target)
+    return target
+  }
+
+  disconnect() {}
+}
+
 export class MockAudioContext {
   currentTime = 0
   state: "running" | "suspended" = "running"
   readonly destination = { id: "destination" }
   readonly gainNodes: MockGainNode[] = []
   readonly sources: MockBufferSource[] = []
+  readonly compressors: MockCompressorNode[] = []
 
   createGain() {
     const node = new MockGainNode()
     this.gainNodes.push(node)
     return node as unknown as GainNode
+  }
+
+  createDynamicsCompressor() {
+    const node = new MockCompressorNode()
+    this.compressors.push(node)
+    return node as unknown as DynamicsCompressorNode
   }
 
   createBufferSource() {

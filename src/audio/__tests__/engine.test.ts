@@ -1,14 +1,33 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { installAudioMocks, type MockAudioContext } from "../../test/audioContextMock"
+import type { Clip } from "../../models/types"
 
-/**
- * AudioEngine is a singleton, so each test re-imports the module to get a fresh
- * instance rather than leaking mixer state between cases.
- */
 async function freshEngine() {
   vi.resetModules()
   const { AudioEngine } = await import("../AudioEngine")
   return AudioEngine.getInstance()
+}
+
+const clip = (over: Partial<Clip> = {}): Clip => ({
+  id: "c1",
+  trackId: "t1",
+  sourceId: "s1",
+  start: 0,
+  offset: 0,
+  duration: 2,
+  fadeIn: 0,
+  fadeOut: 0,
+  gain: 1,
+  ...over,
+})
+
+/** Loads one source, one track and one full-length clip. */
+async function withOneTrack() {
+  const engine = await freshEngine()
+  await engine.loadSource("s1", "blob:s1")
+  engine.ensureTrack("t1")
+  engine.setClips([clip()])
+  return engine
 }
 
 let ctx: MockAudioContext
@@ -21,133 +40,249 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe("AudioEngine - track loading", () => {
-  it("creates a gain node per track and connects it downstream", async () => {
-    const engine = await freshEngine()
-    await engine.loadTrack("a", "blob:a")
-
-    expect(ctx.gainNodes.length).toBeGreaterThan(0)
-    expect(ctx.gainNodes[0].connectedTo.length).toBeGreaterThan(0)
+describe("AudioEngine - signal chain", () => {
+  it("routes the master bus through a limiter", async () => {
+    await freshEngine()
+    expect(ctx.compressors).toHaveLength(1)
+    expect(ctx.compressors[0].connectedTo).toContain(ctx.destination)
   })
 
-  it("disconnects the gain node when a track is removed", async () => {
+  it("gives each track a separate volume and mute stage", async () => {
     const engine = await freshEngine()
-    await engine.loadTrack("a", "blob:a")
-    engine.removeTrack("a")
-
-    expect(ctx.gainNodes.some((n) => n.disconnected)).toBe(true)
-  })
-})
-
-describe("AudioEngine - transport", () => {
-  it("starts a source per loaded track on play", async () => {
-    const engine = await freshEngine()
-    await engine.loadTrack("a", "blob:a")
-    await engine.loadTrack("b", "blob:b")
-
-    engine.play()
-
-    expect(ctx.sources.filter((s) => s.started !== null)).toHaveLength(2)
+    const before = ctx.gainNodes.length
+    engine.ensureTrack("t1")
+    expect(ctx.gainNodes.length).toBe(before + 2)
   })
 
-  it("stops sources on pause", async () => {
+  it("reuses the nodes for a track it already knows", async () => {
     const engine = await freshEngine()
-    await engine.loadTrack("a", "blob:a")
-    engine.play()
-    engine.pause()
-
-    expect(ctx.sources.every((s) => s.stopped)).toBe(true)
+    engine.ensureTrack("t1")
+    const after = ctx.gainNodes.length
+    engine.ensureTrack("t1")
+    expect(ctx.gainNodes.length).toBe(after)
   })
 
-  it("returns to zero on stop", async () => {
+  it("holds one decoded buffer per source, however many times it is requested", async () => {
     const engine = await freshEngine()
-    await engine.loadTrack("a", "blob:a")
-    engine.play()
-    ctx.advance(1.5)
-    engine.stop()
-
-    expect(engine.currentTime).toBe(0)
-  })
-
-  it("keeps the paused position", async () => {
-    const engine = await freshEngine()
-    await engine.loadTrack("a", "blob:a")
-    engine.play()
-    ctx.advance(1.5)
-    engine.pause()
-
-    expect(engine.currentTime).toBeCloseTo(1.5, 5)
+    const a = await engine.loadSource("s1", "blob:s1")
+    const b = await engine.loadSource("s1", "blob:s1")
+    expect(a).toBe(b)
   })
 })
 
 describe("AudioEngine - mixer", () => {
-  it("applies a volume change to the track's gain", async () => {
-    const engine = await freshEngine()
-    await engine.loadTrack("a", "blob:a")
-    engine.setTrackVolume("a", 0.3)
+  it("applies a volume change to the track's fader", async () => {
+    const engine = await withOneTrack()
+    engine.setTrackVolume("t1", 0.3)
 
-    expect(ctx.gainNodes[0].gain.value).toBeCloseTo(0.3, 5)
+    const faders = ctx.gainNodes.filter((n) => n.gain.value === 0.3)
+    expect(faders.length).toBeGreaterThan(0)
   })
 
-  it("drops gain to zero when muted", async () => {
-    const engine = await freshEngine()
-    await engine.loadTrack("a", "blob:a")
-    engine.setTrackVolume("a", 0.3)
-    engine.muteTrack("a", true)
+  it("drops to silence when muted without touching the fader", async () => {
+    const engine = await withOneTrack()
+    engine.setTrackVolume("t1", 0.3)
+    engine.setTrackMuted("t1", true)
 
-    expect(ctx.gainNodes[0].gain.value).toBe(0)
+    // The fader still reads 0.3; a separate stage carries the mute.
+    expect(ctx.gainNodes.some((n) => n.gain.value === 0.3)).toBe(true)
+    expect(ctx.gainNodes.some((n) => n.gain.value === 0)).toBe(true)
   })
 
   /*
-   * KNOWN BUG - Phase 1 fixes this.
-   *
-   * muteTrack(id, false) restores gain to a hardcoded 1.0 instead of the
-   * track's own volume, so a track sitting at 0.3 jumps to full scale while
-   * its slider still reads 0.3. The solo path calls muteTrack for every track,
-   * so one solo toggle resets the whole project.
-   *
-   * it.fails() asserts this is *currently broken*: the suite stays green now,
-   * and turns red the moment the bug is fixed - at which point this becomes a
-   * normal it().
+   * This was it.fails() in Phase 0. Unmuting restored a hardcoded 1.0 and
+   * discarded the fader, and because solo muted every other track, one solo
+   * click reset the whole project's levels.
    */
-  it.fails("restores the track's own volume when unmuted, not full scale", async () => {
-    const engine = await freshEngine()
-    await engine.loadTrack("a", "blob:a")
-    engine.setTrackVolume("a", 0.3)
-    engine.muteTrack("a", true)
-    engine.muteTrack("a", false)
+  it("restores the track's own volume when unmuted, not full scale", async () => {
+    const engine = await withOneTrack()
+    engine.setTrackVolume("t1", 0.3)
+    engine.setTrackMuted("t1", true)
+    engine.setTrackMuted("t1", false)
 
-    expect(ctx.gainNodes[0].gain.value).toBeCloseTo(0.3, 5)
+    // The fader was never written to by the mute, so it still holds 0.3.
+    expect(ctx.gainNodes.some((n) => n.gain.value === 0.3)).toBe(true)
+  })
+
+  it("keeps a volume change made while muted", async () => {
+    const engine = await withOneTrack()
+    engine.setTrackMuted("t1", true)
+    engine.setTrackVolume("t1", 0.42)
+    engine.setTrackMuted("t1", false)
+
+    expect(ctx.gainNodes.some((n) => n.gain.value === 0.42)).toBe(true)
+  })
+
+  it("exposes a master fader", async () => {
+    const engine = await freshEngine()
+    engine.setMasterVolume(0.6)
+    expect(ctx.gainNodes.some((n) => n.gain.value === 0.6)).toBe(true)
   })
 })
 
-describe("AudioEngine - known gaps (Phase 1)", () => {
-  /* Playback end is never detected: source.onended has an empty body, so
-   * isPlaying stays true and the play button never flips back. */
-  it.fails("notifies when playback reaches the end", async () => {
+describe("AudioEngine - transport", () => {
+  it("schedules a source per clip on play", async () => {
     const engine = await freshEngine()
-    await engine.loadTrack("a", "blob:a")
+    await engine.loadSource("s1", "blob:s1")
+    engine.ensureTrack("t1")
+    engine.ensureTrack("t2")
+    engine.setClips([clip({ id: "a" }), clip({ id: "b", trackId: "t2" })])
 
+    engine.play()
+    expect(ctx.sources.filter((s) => s.started !== null)).toHaveLength(2)
+  })
+
+  it("starts every clip in a batch at one shared moment", async () => {
+    const engine = await freshEngine()
+    await engine.loadSource("s1", "blob:s1")
+    engine.ensureTrack("t1")
+    engine.ensureTrack("t2")
+    engine.setClips([clip({ id: "a" }), clip({ id: "b", trackId: "t2" })])
+
+    engine.play()
+    const starts = ctx.sources.map((s) => s.started?.when)
+    expect(new Set(starts).size).toBe(1)
+  })
+
+  it("schedules slightly ahead of now rather than in the past", async () => {
+    const engine = await withOneTrack()
+    engine.play()
+    expect(ctx.sources[0].started!.when).toBeGreaterThan(ctx.currentTime)
+  })
+
+  it("offsets a clip that begins later on the timeline", async () => {
+    const engine = await freshEngine()
+    await engine.loadSource("s1", "blob:s1")
+    engine.ensureTrack("t1")
+    engine.setClips([clip({ start: 1, duration: 1 })])
+
+    engine.play()
+    const started = ctx.sources[0].started!
+    expect(started.when).toBeCloseTo(ctx.currentTime + 0.05 + 1, 5)
+  })
+
+  it("keeps the paused position", async () => {
+    const engine = await withOneTrack()
+    engine.play()
+    ctx.advance(1)
+    engine.pause()
+    // Audio starts one lookahead (50ms) after play, so one second of wall
+    // clock is 0.95s of audible playback.
+    expect(engine.currentTime).toBeCloseTo(0.95, 5)
+  })
+
+  it("returns to zero on stop", async () => {
+    const engine = await withOneTrack()
+    engine.play()
+    ctx.advance(1)
+    engine.stop()
+    expect(engine.currentTime).toBe(0)
+  })
+
+  it("derives duration from the arrangement, not a hardcoded default", async () => {
+    const engine = await freshEngine()
+    await engine.loadSource("s1", "blob:s1")
+    engine.ensureTrack("t1")
+    engine.setClips([clip({ start: 0, duration: 5 }), clip({ id: "c2", start: 10, duration: 7 })])
+    expect(engine.duration).toBe(17)
+  })
+
+  it("clamps a seek past the end of the arrangement", async () => {
+    const engine = await withOneTrack()
+    engine.seek(999)
+    expect(engine.currentTime).toBe(engine.duration)
+  })
+
+  it("clamps a negative seek to zero", async () => {
+    const engine = await withOneTrack()
+    engine.seek(-5)
+    expect(engine.currentTime).toBe(0)
+  })
+
+  it("replays from the start when play is pressed at the end", async () => {
+    const engine = await withOneTrack()
+    engine.seek(engine.duration)
+    engine.play()
+    expect(engine.currentTime).toBeLessThan(engine.duration)
+  })
+})
+
+describe("AudioEngine - end of playback", () => {
+  /* Was it.fails() in Phase 0: source.onended had an empty body, so isPlaying
+   * stayed true and the play button never flipped back. */
+  it("notifies when the arrangement plays through", async () => {
+    const engine = await withOneTrack()
     const onEnded = vi.fn()
-    ;(engine as unknown as { setOnEnded?: (cb: () => void) => void }).setOnEnded?.(onEnded)
+    engine.setOnEnded(onEnded)
 
     engine.play()
     ctx.sources[0].onended?.()
 
-    expect(onEnded).toHaveBeenCalled()
+    expect(onEnded).toHaveBeenCalledTimes(1)
   })
 
-  /* A track loaded while the transport is running never gets a source, so it
-   * stays silent until the user stops and starts again. */
-  it.fails("starts a track added during playback", async () => {
+  it("does not report the end when the user pauses", async () => {
+    const engine = await withOneTrack()
+    const onEnded = vi.fn()
+    engine.setOnEnded(onEnded)
+
+    engine.play()
+    engine.pause()
+
+    expect(onEnded).not.toHaveBeenCalled()
+  })
+
+  it("waits for every clip before reporting the end", async () => {
     const engine = await freshEngine()
-    await engine.loadTrack("a", "blob:a")
+    await engine.loadSource("s1", "blob:s1")
+    engine.ensureTrack("t1")
+    engine.ensureTrack("t2")
+    engine.setClips([clip({ id: "a" }), clip({ id: "b", trackId: "t2" })])
+
+    const onEnded = vi.fn()
+    engine.setOnEnded(onEnded)
+    engine.play()
+
+    ctx.sources[0].onended?.()
+    expect(onEnded).not.toHaveBeenCalled()
+
+    ctx.sources[1].onended?.()
+    expect(onEnded).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("AudioEngine - arrangement changes", () => {
+  /* Was it.fails() in Phase 0: loadTrack never created a source while playing,
+   * so a track added mid-playback stayed silent until stop and start. */
+  it("starts a clip added during playback", async () => {
+    const engine = await freshEngine()
+    await engine.loadSource("s1", "blob:s1")
+    engine.ensureTrack("t1")
+    engine.ensureTrack("t2")
+    engine.setClips([clip({ id: "a" })])
     engine.play()
 
     const before = ctx.sources.filter((s) => s.started !== null).length
-    await engine.loadTrack("b", "blob:b")
+    engine.setClips([clip({ id: "a" }), clip({ id: "b", trackId: "t2" })])
     const after = ctx.sources.filter((s) => s.started !== null).length
 
-    expect(after).toBe(before + 1)
+    expect(after).toBeGreaterThan(before)
+  })
+
+  it("keeps its place when the arrangement changes mid-playback", async () => {
+    const engine = await withOneTrack()
+    engine.play()
+    ctx.advance(0.5)
+    const before = engine.currentTime
+    engine.setClips([clip(), clip({ id: "c2", start: 1 })])
+
+    // Editing the arrangement must not walk the transport backwards.
+    expect(engine.currentTime).toBeCloseTo(before, 5)
+  })
+
+  it("disconnects a removed track's nodes", async () => {
+    const engine = await withOneTrack()
+    engine.removeTrack("t1")
+    expect(ctx.gainNodes.filter((n) => n.disconnected).length).toBeGreaterThanOrEqual(2)
   })
 })

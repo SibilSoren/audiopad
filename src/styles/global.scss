@@ -410,3 +410,33 @@ body {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* Drag and drop ---------------------------------------------------------- */
+
+.app--dragging {
+  /* The overlay carries the visual state; this just stops text selection
+     fighting the drag. */
+  user-select: none;
+}
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(26, 26, 26, 0.85);
+  pointer-events: none;
+}
+
+.drop-overlay__inner {
+  padding: 32px 48px;
+  border: 2px dashed #ff5b21;
+  border-radius: 4px;
+  color: #e8e0d0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

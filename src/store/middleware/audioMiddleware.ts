@@ -1,70 +1,87 @@
 import { type Middleware } from '@reduxjs/toolkit';
 import { AudioEngine } from '../../audio/AudioEngine';
-import { play, pause, stop, setCurrentTime } from '../transportSlice';
-import { setVolume, toggleMute, toggleSolo, removeTrack } from '../tracksSlice';
-
-// Define minimal state shape needed by middleware
-interface TrackState {
-  muted: boolean;
-  solo: boolean;
-  volume: number;
-}
+import { effectiveMute, hasAnySolo } from '../../audio/mixing';
+import { play, pause, stop, seek } from '../transportSlice';
+import {
+  setVolume,
+  toggleMute,
+  toggleSolo,
+  removeTrack,
+  addAudioFile,
+} from '../tracksSlice';
+import type { AudioTrack, Clip } from '../../models/types';
 
 interface TracksSliceState {
-  byId: Record<string, TrackState>;
+  byId: Record<string, AudioTrack>;
   allIds: string[];
+  clips: Record<string, Clip>;
+  clipIds: string[];
 }
 
 interface AppState {
   tracks: TracksSliceState;
 }
 
-export const audioMiddleware: Middleware<object, AppState> = (store) => (next) => (action) => {
+/**
+ * Push the whole mixer state at the engine rather than trying to apply each
+ * action incrementally.
+ *
+ * The old middleware nudged individual gains per action, which is how mute,
+ * solo and volume ended up disagreeing: solo wrote to every track's gain,
+ * volume was skipped entirely while muted, and neither restored the other.
+ * Recomputing from state is cheap and cannot drift.
+ */
+function syncMixer(state: AppState) {
   const engine = AudioEngine.getInstance();
-  
-  // Process action first for state updates
-  const result = next(action);
-  
-  // Then react to changes
-  if (play.match(action)) {
-    engine.play();
-  } else if (pause.match(action)) {
-    engine.pause();
-  } else if (stop.match(action)) {
-    engine.stop();
-  } else if (setCurrentTime.match(action)) {
-    engine.seek(action.payload);
-  } else if (setVolume.match(action)) {
-    const { id, volume } = action.payload;
-    const track = store.getState().tracks.byId[id];
-    // Apply volume only if not muted
-    if (track && !track.muted) {
-      engine.setTrackVolume(id, volume);
-    }
-  } else if (toggleMute.match(action)) {
-    const id = action.payload;
-    const track = store.getState().tracks.byId[id];
-    if (track) {
-      engine.muteTrack(id, track.muted);
-    }
-  } else if (toggleSolo.match(action)) {
-    // Solo: mute all other tracks, unmute this one
-    const state = store.getState().tracks;
-    const hasSolo = Object.values(state.byId).some((t: TrackState) => t.solo);
-    
-    state.allIds.forEach((id: string) => {
-      const track = state.byId[id];
-      if (hasSolo) {
-        // If any track is solo, mute tracks that are NOT solo
-        engine.muteTrack(id, !track.solo);
-      } else {
-        // No solo active, restore based on mute state
-        engine.muteTrack(id, track.muted);
-      }
-    });
-  } else if (removeTrack.match(action)) {
-    engine.removeTrack(action.payload);
-  }
+  const tracks = state.tracks.allIds
+    .map((id) => state.tracks.byId[id])
+    .filter(Boolean);
+  const anySolo = hasAnySolo(tracks);
 
-  return result;
-};
+  for (const track of tracks) {
+    engine.ensureTrack(track.id);
+    engine.setTrackVolume(track.id, track.volume);
+    engine.setTrackMuted(track.id, effectiveMute(track, anySolo));
+  }
+}
+
+function syncClips(state: AppState) {
+  const clips = state.tracks.clipIds
+    .map((id) => state.tracks.clips[id])
+    .filter(Boolean);
+  AudioEngine.getInstance().setClips(clips);
+}
+
+export const audioMiddleware: Middleware<object, AppState> =
+  (store) => (next) => (action) => {
+    const result = next(action);
+    const engine = AudioEngine.getInstance();
+    const state = store.getState();
+
+    if (play.match(action)) {
+      engine.play();
+    } else if (pause.match(action)) {
+      engine.pause();
+    } else if (stop.match(action)) {
+      engine.stop();
+    } else if (seek.match(action)) {
+      engine.seek(action.payload);
+    } else if (
+      setVolume.match(action) ||
+      toggleMute.match(action) ||
+      toggleSolo.match(action)
+    ) {
+      syncMixer(state);
+    } else if (addAudioFile.fulfilled.match(action)) {
+      // Order matters: the track's nodes have to exist before its clip is
+      // scheduled onto them.
+      syncMixer(state);
+      syncClips(state);
+    } else if (removeTrack.match(action)) {
+      engine.removeTrack(action.payload);
+      syncClips(state);
+      syncMixer(state);
+    }
+
+    return result;
+  };

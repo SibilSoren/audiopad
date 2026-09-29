@@ -1,131 +1,99 @@
+import { useEffect, useRef, useState } from 'react';
+import { FaPlay, FaPause, FaStop, FaInfoCircle } from 'react-icons/fa';
+
 import { useAppDispatch, useAppSelector } from '../store/store';
 import { play, pause, stop } from '../store/transportSlice';
-import { FaPlay, FaPause, FaStop, FaInfoCircle } from 'react-icons/fa';
-import { v4 as uuidv4 } from 'uuid';
-import { addTrack, loadTrackAudio, setAlbumArt } from '../store/tracksSlice';
-import { toast } from 'react-toastify';
-import { useEffect, useRef, useState } from 'react';
 import { AudioEngine } from '../audio/AudioEngine';
-import * as musicMetadata from 'music-metadata-browser';
+import { useAudioFiles } from '../hooks/useAudioFiles';
+import { formatTime } from '../lib/time';
 
 interface TransportControlsProps {
   onHelpClick: () => void;
 }
 
 export const TransportControls = ({ onHelpClick }: TransportControlsProps) => {
-    const dispatch = useAppDispatch();
-    const isPlaying = useAppSelector(state => state.transport.isPlaying);
-    const rafRef = useRef<number>(0);
-    
-    // Use local state for timer to avoid Redux overhead
-    const [displayTime, setDisplayTime] = useState(0);
+  const dispatch = useAppDispatch();
+  const isPlaying = useAppSelector((state) => state.transport.isPlaying);
+  const { addFiles } = useAudioFiles();
 
-    useEffect(() => {
-        const updateTime = () => {
-            const engine = AudioEngine.getInstance();
-            setDisplayTime(engine.currentTime);
-            rafRef.current = requestAnimationFrame(updateTime);
-        };
+  const rafRef = useRef<number>(0);
+  // Local state rather than Redux: this ticks at 60fps and nothing else needs it.
+  const [displayTime, setDisplayTime] = useState(0);
 
-        if (isPlaying) {
-            rafRef.current = requestAnimationFrame(updateTime);
-        } else {
-            // One frame to settle the clock on the paused position. Scheduled
-            // rather than set synchronously, which would cascade a re-render.
-            rafRef.current = requestAnimationFrame(() => {
-                setDisplayTime(AudioEngine.getInstance().currentTime);
-            });
-        }
-
-        return () => {
-            if (rafRef.current) {
-                cancelAnimationFrame(rafRef.current);
-            }
-        };
-    }, [isPlaying]);
-
-    const formatTime = (time: number) => {
-        const min = Math.floor(time / 60);
-        const sec = Math.floor(time % 60);
-        const ms = Math.floor((time % 1) * 100);
-        return `${min}:${sec.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+  useEffect(() => {
+    const updateTime = () => {
+      setDisplayTime(AudioEngine.getInstance().currentTime);
+      rafRef.current = requestAnimationFrame(updateTime);
     };
 
-    const extractAlbumArt = async (file: File, trackId: string) => {
-        try {
-            const metadata = await musicMetadata.parseBlob(file);
-            const picture = metadata.common.picture?.[0];
-            
-            if (picture) {
-                const base64 = btoa(
-                    picture.data.reduce((data, byte) => data + String.fromCharCode(byte), '')
-                );
-                const dataUrl = `data:${picture.format};base64,${base64}`;
-                dispatch(setAlbumArt({ id: trackId, albumArt: dataUrl }));
-            }
-        } catch (error) {
-            console.log('Could not parse metadata:', error);
-        }
+    if (isPlaying) {
+      rafRef.current = requestAnimationFrame(updateTime);
+    } else {
+      rafRef.current = requestAnimationFrame(() => {
+        setDisplayTime(AudioEngine.getInstance().currentTime);
+      });
+    }
+
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
+  }, [isPlaying]);
 
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            const url = URL.createObjectURL(file);
-            const id = uuidv4();
-            const name = file.name.replace(/\.[^/.]+$/, '');
-            
-            dispatch(addTrack({ id, name }));
-            dispatch(loadTrackAudio({ id, url }));
-            extractAlbumArt(file, id);
-            
-            toast.success(`"${name}" added`, {
-                position: 'bottom-right',
-                autoClose: 2000,
-            });
-        }
-        e.target.value = '';
-    };
+  return (
+    <div className="header">
+      <div className="controls">
+        {!isPlaying ? (
+          <button
+            onClick={() => dispatch(play())}
+            className="btn btn--primary btn--icon"
+            aria-label="Play"
+          >
+            <FaPlay style={{ marginLeft: 2 }} aria-hidden="true" />
+          </button>
+        ) : (
+          <button
+            onClick={() => dispatch(pause())}
+            className="btn btn--primary btn--icon"
+            aria-label="Pause"
+          >
+            <FaPause aria-hidden="true" />
+          </button>
+        )}
+        <button
+          onClick={() => dispatch(stop())}
+          className="btn btn--icon"
+          aria-label="Stop"
+        >
+          <FaStop aria-hidden="true" />
+        </button>
+      </div>
 
-    return (
-        <div className="header">
-            <div className="controls">
-                {!isPlaying ? (
-                    <button onClick={() => dispatch(play())} className="btn btn--primary btn--icon">
-                        <FaPlay style={{ marginLeft: 2 }} />
-                    </button>
-                ) : (
-                    <button onClick={() => dispatch(pause())} className="btn btn--primary btn--icon">
-                        <FaPause />
-                    </button>
-                )}
-                <button onClick={() => dispatch(stop())} className="btn btn--icon">
-                     <FaStop />
-                </button>
-            </div>
-            
-            <div className="time-display">
-                {formatTime(displayTime)}
-            </div>
+      <div className="time-display" aria-live="off">
+        {formatTime(displayTime)}
+      </div>
 
-            <label className="btn" style={{ cursor: 'pointer' }}>
-                + Add Track
-                <input 
-                    type="file" 
-                    accept="audio/*" 
-                    style={{ display: 'none' }} 
-                    onChange={handleFileUpload}
-                />
-            </label>
-            
-            <div className="header-title">
-                <img src="/logo.png" alt="AudioPad" className="header-logo" />
-                Audio<span className="header-title-accent">Pad</span>
-            </div>
-            
-            <button onClick={onHelpClick} className="btn btn--icon" title="Info">
-                <FaInfoCircle />
-            </button>
-        </div>
-    );
+      <label className="btn" style={{ cursor: 'pointer' }}>
+        + Add Tracks
+        <input
+          type="file"
+          accept="audio/*"
+          multiple
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            if (e.target.files?.length) void addFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+      </label>
+
+      <div className="header-title">
+        <img src="/logo.png" alt="" className="header-logo" />
+        Audio<span className="header-title-accent">Pad</span>
+      </div>
+
+      <button onClick={onHelpClick} className="btn btn--icon" aria-label="About AudioPad">
+        <FaInfoCircle aria-hidden="true" />
+      </button>
+    </div>
+  );
 };
