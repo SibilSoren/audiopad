@@ -2,6 +2,8 @@ import { useRef, useEffect, useCallback } from 'react';
 import { useAppSelector, useAppDispatch } from '../store/store';
 import { AudioEngine } from '../audio/AudioEngine';
 import { seek } from '../store/transportSlice';
+import { selectClip } from '../store/uiSlice';
+import { clipAt } from '../audio/clipOps';
 import {
   selectClips,
   selectTracks,
@@ -21,6 +23,7 @@ export const WaveformCanvas = () => {
   const sources = useAppSelector(selectSources);
   const duration = useAppSelector(selectDuration);
   const isPlaying = useAppSelector((state) => state.transport.isPlaying);
+  const selectedClipId = useAppSelector((state) => state.ui.selectedClipId);
 
   const requestRef = useRef<number>(0);
 
@@ -33,9 +36,29 @@ export const WaveformCanvas = () => {
       // rect.width, not canvas.width: the backing store is scaled by the
       // device pixel ratio and would map clicks to the wrong time.
       const ratio = (e.clientX - rect.left) / rect.width;
-      dispatch(seek(Math.max(0, Math.min(ratio, 1)) * duration));
+      const time = Math.max(0, Math.min(ratio, 1)) * duration;
+
+      dispatch(seek(time));
+
+      // Which lane was clicked, and therefore which track's clips to test.
+      const y = e.clientY - rect.top;
+      if (y < RULER_HEIGHT || tracks.length === 0) {
+        dispatch(selectClip(null));
+        return;
+      }
+
+      const laneHeight = (rect.height - RULER_HEIGHT) / tracks.length;
+      const laneIndex = Math.floor((y - RULER_HEIGHT) / laneHeight);
+      const track = tracks[laneIndex];
+      if (!track) {
+        dispatch(selectClip(null));
+        return;
+      }
+
+      const hit = clipAt(clips, track.id, time);
+      dispatch(selectClip(hit?.id ?? null));
     },
-    [dispatch, duration]
+    [dispatch, duration, tracks, clips]
   );
 
   const draw = useCallback(() => {
@@ -128,6 +151,30 @@ export const WaveformCanvas = () => {
             barHeight
           );
         }
+
+        // Fade ramps, drawn so they are visible before the handles exist.
+        if (clip.fadeIn > 0 || clip.fadeOut > 0) {
+          ctx.strokeStyle = '#e8e0d0';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          if (clip.fadeIn > 0) {
+            const w = (clip.fadeIn / clip.duration) * clipW;
+            ctx.moveTo(clipX, y + laneHeight - 2);
+            ctx.lineTo(clipX + w, y + 2);
+          }
+          if (clip.fadeOut > 0) {
+            const w = (clip.fadeOut / clip.duration) * clipW;
+            ctx.moveTo(clipX + clipW - w, y + 2);
+            ctx.lineTo(clipX + clipW, y + laneHeight - 2);
+          }
+          ctx.stroke();
+        }
+
+        if (clip.id === selectedClipId) {
+          ctx.strokeStyle = '#ff5b21';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(clipX + 1, y + 3, Math.max(2, clipW - 2), laneHeight - 6);
+        }
       }
 
       // Label last, so it sits above the waveform.
@@ -150,7 +197,7 @@ export const WaveformCanvas = () => {
     ctx.lineTo(playheadX, 10);
     ctx.closePath();
     ctx.fill();
-  }, [tracks, clips, sources, duration]);
+  }, [tracks, clips, sources, duration, selectedClipId]);
 
   // Size the backing store to the device pixel ratio. Without this the canvas
   // was one CSS pixel per device pixel and every waveform was soft on a

@@ -8,6 +8,12 @@ import {
   toggleSolo,
   removeTrack,
   addAudioFile,
+  splitClipAt,
+  removeClip,
+  moveClipTo,
+  trimClipStart,
+  trimClipEnd,
+  setClipFades,
 } from '../tracksSlice';
 import { setMasterVolume } from '../mixerSlice';
 import type { AudioTrack, Clip } from '../../models/types';
@@ -77,6 +83,17 @@ export const audioMiddleware: Middleware<object, AppState> =
       // Order matters: the track's nodes have to exist before its clip is
       // scheduled onto them.
       syncMixer(state);
+      syncClips(state);
+    } else if (
+      splitClipAt.match(action) ||
+      removeClip.match(action) ||
+      moveClipTo.match(action) ||
+      trimClipStart.match(action) ||
+      trimClipEnd.match(action) ||
+      setClipFades.match(action)
+    ) {
+      // Any arrangement edit reschedules. If the transport is running the
+      // engine picks up the change without losing its place.
       syncClips(state);
     } else if (setMasterVolume.match(action)) {
       engine.setMasterVolume(action.payload);

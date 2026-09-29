@@ -3,6 +3,13 @@ import { v4 as uuidv4 } from 'uuid';
 import type { AudioTrack, AudioSource, Clip } from '../models/types';
 import { AudioEngine } from '../audio/AudioEngine';
 import { getPeakData } from '../audio/AudioUtils';
+import {
+  splitClip,
+  moveClip,
+  trimStart,
+  trimEnd,
+  setFades,
+} from '../audio/clipOps';
 
 /** Fixed palette, so a track is the same colour everywhere it appears. */
 export const TRACK_COLORS = [
@@ -126,6 +133,102 @@ const tracksSlice = createSlice({
       const track = state.byId[action.payload.id];
       if (track) track.albumArt = action.payload.albumArt;
     },
+
+    /*
+     * Clip edits. The maths lives in clipOps so it can be tested on its own;
+     * these reducers only deal with where the result is stored.
+     */
+
+    splitClipAt: {
+      reducer: (
+        state,
+        action: PayloadAction<{ clipId: string; time: number; newId: string }>
+      ) => {
+        const { clipId, time, newId } = action.payload;
+        const clip = state.clips[clipId];
+        if (!clip) return;
+
+        const halves = splitClip(clip, time, newId);
+        if (!halves) return;
+
+        const [left, right] = halves;
+        state.clips[left.id] = left;
+        state.clips[right.id] = right;
+        state.clipIds.push(right.id);
+      },
+      // The id is generated here so the reducer itself stays pure.
+      prepare: (clipId: string, time: number) => ({
+        payload: { clipId, time, newId: uuidv4() },
+      }),
+    },
+
+    removeClip: (state, action: PayloadAction<string>) => {
+      const clipId = action.payload;
+      const clip = state.clips[clipId];
+      if (!clip) return;
+
+      delete state.clips[clipId];
+      state.clipIds = state.clipIds.filter((id) => id !== clipId);
+
+      // Release the decoded audio once no clip cites it any more.
+      const stillUsed = Object.values(state.clips).some(
+        (c) => c.sourceId === clip.sourceId
+      );
+      if (!stillUsed) {
+        delete state.sources[clip.sourceId];
+        AudioEngine.getInstance().releaseSource(clip.sourceId);
+      }
+    },
+
+    moveClipTo: (
+      state,
+      action: PayloadAction<{ clipId: string; start: number }>
+    ) => {
+      const clip = state.clips[action.payload.clipId];
+      if (clip) state.clips[clip.id] = moveClip(clip, action.payload.start);
+    },
+
+    trimClipStart: (
+      state,
+      action: PayloadAction<{ clipId: string; start: number }>
+    ) => {
+      const clip = state.clips[action.payload.clipId];
+      if (!clip) return;
+      const source = state.sources[clip.sourceId];
+      state.clips[clip.id] = trimStart(
+        clip,
+        action.payload.start,
+        source?.duration ?? clip.duration
+      );
+    },
+
+    trimClipEnd: (
+      state,
+      action: PayloadAction<{ clipId: string; end: number }>
+    ) => {
+      const clip = state.clips[action.payload.clipId];
+      if (!clip) return;
+      const source = state.sources[clip.sourceId];
+      state.clips[clip.id] = trimEnd(
+        clip,
+        action.payload.end,
+        source?.duration ?? clip.duration
+      );
+    },
+
+    setClipFades: (
+      state,
+      action: PayloadAction<{ clipId: string; fadeIn: number; fadeOut: number }>
+    ) => {
+      const clip = state.clips[action.payload.clipId];
+      if (clip) {
+        state.clips[clip.id] = setFades(
+          clip,
+          action.payload.fadeIn,
+          action.payload.fadeOut
+        );
+      }
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -169,6 +272,17 @@ const tracksSlice = createSlice({
   },
 });
 
-export const { removeTrack, setVolume, toggleMute, toggleSolo, setAlbumArt } =
-  tracksSlice.actions;
+export const {
+  removeTrack,
+  setVolume,
+  toggleMute,
+  toggleSolo,
+  setAlbumArt,
+  splitClipAt,
+  removeClip,
+  moveClipTo,
+  trimClipStart,
+  trimClipEnd,
+  setClipFades,
+} = tracksSlice.actions;
 export default tracksSlice.reducer;

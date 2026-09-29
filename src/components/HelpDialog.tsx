@@ -41,10 +41,19 @@ export const HelpDialog = ({ isOpen, onClose }: HelpDialogProps) => {
             <li><strong>Fader</strong> — track level, independent of mute</li>
           </ul>
 
+          <h3>Editing</h3>
+          <ul>
+            <li>Click a clip to select it</li>
+            <li>Split it at the playhead, or delete it outright</li>
+            <li>A split copies no audio — both halves share one buffer</li>
+          </ul>
+
           <h3>Keyboard</h3>
           <ul>
             <li><kbd>Space</kbd> play / pause</li>
-            <li><kbd>Esc</kbd> stop</li>
+            <li><kbd>S</kbd> split the selected clip at the playhead</li>
+            <li><kbd>Del</kbd> remove the selected clip</li>
+            <li><kbd>Esc</kbd> stop and deselect</li>
           </ul>
         </div>
       </div>

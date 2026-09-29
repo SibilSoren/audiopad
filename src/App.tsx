@@ -5,6 +5,8 @@ import { FaMusic } from 'react-icons/fa';
 import { useAppDispatch, useAppSelector } from './store/store';
 import { play, pause, stop, playbackEnded } from './store/transportSlice';
 import { selectTrackIds } from './store/selectors';
+import { splitClipAt, removeClip } from './store/tracksSlice';
+import { selectClip } from './store/uiSlice';
 import { AudioEngine } from './audio/AudioEngine';
 import { useAudioFiles } from './hooks/useAudioFiles';
 import { TransportControls } from './components/TransportControls';
@@ -21,6 +23,7 @@ function App() {
   const isPlaying = useAppSelector((state) => state.transport.isPlaying);
   const trackIds = useAppSelector(selectTrackIds);
   const masterVolume = useAppSelector((state) => state.mixer.masterVolume);
+  const selectedClipId = useAppSelector((state) => state.ui.selectedClipId);
   const { addFiles } = useAudioFiles();
 
   // Read during initialisation rather than setting state from an effect.
@@ -58,11 +61,30 @@ function App() {
           break;
         case 'Escape':
           dispatch(stop());
+          dispatch(selectClip(null));
           setShowHelp(false);
+          break;
+        case 'KeyS':
+          // Split the selected clip where the playhead is. The reducer
+          // ignores a cut that would not land inside the clip.
+          if (selectedClipId) {
+            e.preventDefault();
+            dispatch(
+              splitClipAt(selectedClipId, AudioEngine.getInstance().currentTime)
+            );
+          }
+          break;
+        case 'Delete':
+        case 'Backspace':
+          if (selectedClipId) {
+            e.preventDefault();
+            dispatch(removeClip(selectedClipId));
+            dispatch(selectClip(null));
+          }
           break;
       }
     },
-    [dispatch, isPlaying]
+    [dispatch, isPlaying, selectedClipId]
   );
 
   useEffect(() => {

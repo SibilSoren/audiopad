@@ -3,13 +3,15 @@ import { type TypedUseSelectorHook, useDispatch, useSelector } from 'react-redux
 import tracksReducer from './tracksSlice';
 import transportReducer from './transportSlice';
 import mixerReducer from './mixerSlice';
+import uiReducer from './uiSlice';
 import { audioMiddleware } from './middleware/audioMiddleware';
 
 export const store = configureStore({
   reducer: {
     tracks: tracksReducer,
     transport: transportReducer,
-    mixer: mixerReducer
+    mixer: mixerReducer,
+    ui: uiReducer
   },
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(audioMiddleware),
 });
