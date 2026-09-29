@@ -8,6 +8,7 @@ import {
   toggleSolo,
   removeTrack,
   addAudioFile,
+  restoreTracks,
   splitClipAt,
   removeClip,
   moveClipTo,
@@ -90,10 +91,13 @@ export const audioMiddleware: Middleware<object, AppState> =
       moveClipTo.match(action) ||
       trimClipStart.match(action) ||
       trimClipEnd.match(action) ||
-      setClipFades.match(action)
+      setClipFades.match(action) ||
+      restoreTracks.match(action)
     ) {
       // Any arrangement edit reschedules. If the transport is running the
-      // engine picks up the change without losing its place.
+      // engine picks up the change without losing its place. An undo can
+      // also bring back a track, so the mixer is resynced as well.
+      syncMixer(state);
       syncClips(state);
     } else if (setMasterVolume.match(action)) {
       engine.setMasterVolume(action.payload);

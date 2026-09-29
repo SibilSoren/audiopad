@@ -706,3 +706,14 @@ input[type='range'] {
 .hscroll__content {
   height: 1px;
 }
+
+/* Disabled controls -------------------------------------------------------- */
+
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+
+  &:hover {
+    background: var(--tone-3);
+  }
+}

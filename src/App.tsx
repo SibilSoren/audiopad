@@ -7,6 +7,7 @@ import { play, pause, stop, playbackEnded } from './store/transportSlice';
 import { selectTracks, selectDuration } from './store/selectors';
 import { splitClipAt, removeClip } from './store/tracksSlice';
 import { selectClip, setView, markAutoFitted } from './store/uiSlice';
+import { undo, redo } from './store/historySlice';
 import { AudioEngine } from './audio/AudioEngine';
 import { useAudioFiles } from './hooks/useAudioFiles';
 import { useElementWidth } from './hooks/useElementWidth';
@@ -17,6 +18,7 @@ import { TimelineRuler } from './components/TimelineRuler';
 import { TrackLanes } from './components/TrackLanes';
 import { TimelineScrollbar } from './components/TimelineScrollbar';
 import { ZoomControls } from './components/ZoomControls';
+import { UndoControls } from './components/UndoControls';
 import { HelpDialog } from './components/HelpDialog';
 import {
   fitZoom,
@@ -106,6 +108,14 @@ function App() {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return;
+
+      // Undo and redo before the switch: they are modified keys and would
+      // otherwise fall through to the plain-key cases.
+      if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ') {
+        e.preventDefault();
+        dispatch(e.shiftKey ? redo() : undo());
+        return;
+      }
 
       switch (e.code) {
         case 'Space':
@@ -211,6 +221,7 @@ function App() {
       onDrop={onDrop}
     >
       <TransportControls onHelpClick={() => setShowHelp(true)}>
+        <UndoControls />
         <ZoomControls width={width} />
       </TransportControls>
 

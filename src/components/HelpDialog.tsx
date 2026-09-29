@@ -64,6 +64,7 @@ export const HelpDialog = ({ isOpen, onClose }: HelpDialogProps) => {
             <li><kbd>Space</kbd> play / pause</li>
             <li><kbd>S</kbd> split the selected clip at the playhead</li>
             <li><kbd>Del</kbd> remove the selected clip</li>
+            <li><kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Z</kbd> undo, with <kbd>Shift</kbd> to redo</li>
             <li><kbd>Esc</kbd> stop and deselect</li>
           </ul>
         </div>

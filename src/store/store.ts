@@ -4,6 +4,8 @@ import tracksReducer from './tracksSlice';
 import transportReducer from './transportSlice';
 import mixerReducer from './mixerSlice';
 import uiReducer from './uiSlice';
+import historyReducer from './historySlice';
+import { historyMiddleware } from './middleware/historyMiddleware';
 import { audioMiddleware } from './middleware/audioMiddleware';
 
 export const store = configureStore({
@@ -11,9 +13,10 @@ export const store = configureStore({
     tracks: tracksReducer,
     transport: transportReducer,
     mixer: mixerReducer,
-    ui: uiReducer
+    ui: uiReducer,
+    history: historyReducer
   },
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(audioMiddleware),
+  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(historyMiddleware, audioMiddleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

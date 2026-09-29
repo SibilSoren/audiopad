@@ -21,7 +21,7 @@ export const TRACK_COLORS = [
   '#facc15',
 ] as const;
 
-interface TracksState {
+export interface TracksState {
   byId: Record<string, AudioTrack>;
   allIds: string[];
   /** Decoded files, keyed by source id and shared between clips. */
@@ -126,6 +126,9 @@ const tracksSlice = createSlice({
       }
       track.solo = next;
     },
+    /** Replace the whole slice. Used by undo and redo, and not itself undoable. */
+    restoreTracks: (_state, action: PayloadAction<TracksState>) => action.payload,
+
     setAlbumArt: (
       state,
       action: PayloadAction<{ id: string; albumArt: string }>
@@ -273,6 +276,7 @@ const tracksSlice = createSlice({
 });
 
 export const {
+  restoreTracks,
   removeTrack,
   setVolume,
   toggleMute,
