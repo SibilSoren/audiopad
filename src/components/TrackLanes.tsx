@@ -16,6 +16,18 @@ import {
   visibleRange,
   type Viewport,
 } from '../lib/viewport'
+import type { Clip, AudioTrack, AudioSource } from '../models/types'
+
+/** A clip carries its name in a bar along its top edge, like a window title. */
+const CLIP_HEADER = 15
+const CLIP_INSET = 3
+
+const TONE_VOID = '#0d0c0b'
+const TONE_ALT = '#111010'
+const TONE_LINE = '#211e1b'
+const BONE = '#e8e0d0'
+const BONE_FAINT = '#5f594f'
+const ACCENT = '#ff5b21'
 
 /**
  * The track lanes.
@@ -41,6 +53,7 @@ export const TrackLanes = ({ width }: { width: number }) => {
 
   const drag = useClipDrag()
   const [hoverZone, setHoverZone] = useState<HitZone | null>(null)
+  const [hoverClipId, setHoverClipId] = useState<string | null>(null)
 
   const view: Viewport = useMemo(
     () => ({ viewStart, pixelsPerSecond, width }),
@@ -53,11 +66,11 @@ export const TrackLanes = ({ width }: { width: number }) => {
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx || width === 0) return
 
-    ctx.fillStyle = '#0d0c0b'
+    ctx.fillStyle = TONE_VOID
     ctx.fillRect(0, 0, width, height)
 
     if (tracks.length === 0) {
-      ctx.fillStyle = '#5f594f'
+      ctx.fillStyle = BONE_FAINT
       ctx.font = "11px 'Space Mono', monospace"
       ctx.textAlign = 'center'
       ctx.fillText('DROP AUDIO FILES HERE', width / 2, LANE_HEIGHT / 2)
@@ -66,106 +79,198 @@ export const TrackLanes = ({ width }: { width: number }) => {
 
     const [from, to] = visibleRange(view)
 
-    tracks.forEach((track, index) => {
-      const y = laneTop(index)
-      const centerY = y + LANE_HEIGHT / 2
+    /** One clip: body, header, waveform, fades, then handles on top. */
+    const drawClip = (
+      clip: Clip,
+      track: AudioTrack,
+      source: AudioSource | undefined,
+      laneY: number
+    ) => {
+      const x = timeToX(clip.start, view)
+      const w = clip.duration * pixelsPerSecond
+      const top = laneY + CLIP_INSET
+      const bodyHeight = LANE_HEIGHT - CLIP_INSET * 2
 
-      ctx.fillStyle = index % 2 === 0 ? '#111010' : '#0d0c0b'
-      ctx.fillRect(0, y, width, LANE_HEIGHT)
-      ctx.fillStyle = '#211e1b'
-      ctx.fillRect(0, y + LANE_HEIGHT - 1, width, 1)
+      const isSelected = clip.id === selectedClipId || clip.id === drag.draggingClipId
+      const isHovered = clip.id === hoverClipId && !drag.isDragging
+
+      // Body, lifted slightly when the clip is under the pointer or selected.
+      ctx.fillStyle = `${track.color}${isSelected ? '2e' : isHovered ? '22' : '16'}`
+      ctx.fillRect(x, top, w, bodyHeight)
+
+      // Header bar carrying the name, so a split is legible as two clips
+      // rather than one waveform with a seam in it.
+      const showHeader = w >= 40
+      if (showHeader) {
+        ctx.fillStyle = `${track.color}${isSelected ? 'ee' : 'aa'}`
+        ctx.fillRect(x, top, w, CLIP_HEADER)
+
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(x + 4, top, Math.max(0, w - 8), CLIP_HEADER)
+        ctx.clip()
+        ctx.fillStyle = TONE_VOID
+        ctx.font = "9px 'Space Mono', monospace"
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'middle'
+        ctx.fillText((source?.name ?? 'CLIP').toUpperCase(), x + 5, top + CLIP_HEADER / 2 + 0.5)
+        ctx.restore()
+        ctx.textBaseline = 'alphabetic'
+      }
+
+      const waveTop = top + (showHeader ? CLIP_HEADER : 0)
+      const waveHeight = bodyHeight - (showHeader ? CLIP_HEADER : 0)
+      const centerY = waveTop + waveHeight / 2
+
+      if (!source?.peaks?.length) {
+        ctx.fillStyle = BONE_FAINT
+        ctx.font = "10px 'Space Mono', monospace"
+        ctx.textAlign = 'left'
+        ctx.fillText('LOADING', x + 6, centerY)
+        return
+      }
+
+      // Only the peaks under visible pixels are walked, so cost tracks the
+      // viewport rather than the length of the audio.
+      const peaks = source.peaks
+      const startPx = Math.max(0, Math.floor(timeToX(Math.max(clip.start, from), view)))
+      const endPx = Math.min(
+        width,
+        Math.ceil(timeToX(Math.min(clip.start + clip.duration, to), view))
+      )
+
+      ctx.fillStyle = track.color
+      const half = (waveHeight - 6) / 2
+
+      for (let px = startPx; px < endPx; px++) {
+        const intoSource = clip.offset + (xToTime(px, view) - clip.start)
+        const index = Math.floor((intoSource / source.duration) * peaks.length)
+        const peak = peaks[Math.max(0, Math.min(peaks.length - 1, index))] ?? 0
+        const barHeight = Math.max(1, peak * half * 2)
+        ctx.fillRect(px, centerY - barHeight / 2, 1, barHeight)
+      }
+
+      // Fades are shaded wedges over the waveform, so the ramp reads as
+      // attenuation rather than as a stray diagonal line.
+      const shadeFade = (fade: number, atStart: boolean) => {
+        if (fade <= 0) return
+        const fw = Math.min(fade * pixelsPerSecond, w)
+        ctx.fillStyle = 'rgba(13, 12, 11, 0.72)'
+        ctx.beginPath()
+        if (atStart) {
+          ctx.moveTo(x, waveTop)
+          ctx.lineTo(x + fw, waveTop)
+          ctx.lineTo(x, waveTop + waveHeight)
+        } else {
+          ctx.moveTo(x + w, waveTop)
+          ctx.lineTo(x + w - fw, waveTop)
+          ctx.lineTo(x + w, waveTop + waveHeight)
+        }
+        ctx.closePath()
+        ctx.fill()
+
+        ctx.strokeStyle = BONE
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        if (atStart) {
+          ctx.moveTo(x, waveTop + waveHeight)
+          ctx.lineTo(x + fw, waveTop)
+        } else {
+          ctx.moveTo(x + w - fw, waveTop)
+          ctx.lineTo(x + w, waveTop + waveHeight)
+        }
+        ctx.stroke()
+      }
+      shadeFade(clip.fadeIn, true)
+      shadeFade(clip.fadeOut, false)
+
+      // Handles: dimmed on hover, solid once selected, so the clip does not
+      // sprout controls the moment the pointer crosses it.
+      if (!isSelected && !isHovered) return
+
+      const alpha = isSelected ? 1 : 0.45
+      ctx.globalAlpha = alpha
+
+      if (w >= EDGE_GRAB_PX * 3) {
+        ctx.fillStyle = ACCENT
+        ctx.fillRect(x, top, EDGE_GRAB_PX, bodyHeight)
+        ctx.fillRect(x + w - EDGE_GRAB_PX, top, EDGE_GRAB_PX, bodyHeight)
+
+        // Grip lines, the usual signal that an edge can be pulled.
+        ctx.fillStyle = TONE_VOID
+        const gripY = top + bodyHeight / 2 - 5
+        for (const gx of [x + 2, x + w - EDGE_GRAB_PX + 2]) {
+          for (let i = 0; i < 3; i++) {
+            ctx.fillRect(gx, gripY + i * 4, 2, 2)
+          }
+        }
+      }
+
+      // Fade grips are triangles pointing the way the fade runs.
+      if (w >= FADE_HANDLE_PX * 3) {
+        ctx.fillStyle = BONE
+        ctx.beginPath()
+        ctx.moveTo(x, top)
+        ctx.lineTo(x + FADE_HANDLE_PX, top)
+        ctx.lineTo(x, top + FADE_HANDLE_PX)
+        ctx.closePath()
+        ctx.fill()
+
+        ctx.beginPath()
+        ctx.moveTo(x + w, top)
+        ctx.lineTo(x + w - FADE_HANDLE_PX, top)
+        ctx.lineTo(x + w, top + FADE_HANDLE_PX)
+        ctx.closePath()
+        ctx.fill()
+      }
+
+      ctx.globalAlpha = 1
+
+      if (isSelected) {
+        ctx.strokeStyle = ACCENT
+        ctx.lineWidth = 2
+        ctx.strokeRect(x + 1, top + 1, Math.max(2, w - 2), bodyHeight - 2)
+      }
+    }
+
+    tracks.forEach((track, index) => {
+      const laneY = laneTop(index)
+
+      ctx.fillStyle = index % 2 === 0 ? TONE_ALT : TONE_VOID
+      ctx.fillRect(0, laneY, width, LANE_HEIGHT)
+      ctx.fillStyle = TONE_LINE
+      ctx.fillRect(0, laneY + LANE_HEIGHT - 1, width, 1)
 
       for (const stored of clips) {
         if (stored.trackId !== track.id) continue
         // While dragging, draw the preview rather than the committed clip.
         const clip =
           drag.draft && drag.draggingClipId === stored.id ? drag.draft : stored
-        // Skip clips entirely outside the visible window.
         if (clip.start + clip.duration < from || clip.start > to) continue
 
-        const source = sources[clip.sourceId]
-        const clipX = timeToX(clip.start, view)
-        const clipW = clip.duration * pixelsPerSecond
-
-        ctx.fillStyle = `${track.color}14`
-        ctx.fillRect(clipX, y + 2, clipW, LANE_HEIGHT - 4)
-
-        if (!source?.peaks?.length) {
-          ctx.fillStyle = '#5f594f'
-          ctx.font = "10px 'Space Mono', monospace"
-          ctx.textAlign = 'left'
-          ctx.fillText('LOADING', clipX + 8, centerY)
-          continue
-        }
-
-        // Only the peaks for the visible slice of this clip are walked, so
-        // cost tracks the viewport rather than the length of the audio.
-        const peaks = source.peaks
-        const visibleFrom = Math.max(clip.start, from)
-        const visibleTo = Math.min(clip.start + clip.duration, to)
-        const startPx = Math.max(0, Math.floor(timeToX(visibleFrom, view)))
-        const endPx = Math.min(width, Math.ceil(timeToX(visibleTo, view)))
-
-        ctx.fillStyle = track.color
-        const half = (LANE_HEIGHT - 12) / 2
-
-        for (let px = startPx; px < endPx; px++) {
-          const time = xToTime(px, view)
-          const intoClip = time - clip.start
-          const intoSource = clip.offset + intoClip
-          const peakIndex = Math.floor((intoSource / source.duration) * peaks.length)
-          const peak = peaks[Math.max(0, Math.min(peaks.length - 1, peakIndex))] ?? 0
-          const barHeight = Math.max(1, peak * half * 2)
-          ctx.fillRect(px, centerY - barHeight / 2, 1, barHeight)
-        }
-
-        // Fade ramps, visible before there are handles to drag.
-        if (clip.fadeIn > 0 || clip.fadeOut > 0) {
-          ctx.strokeStyle = '#e8e0d0'
-          ctx.lineWidth = 1
-          ctx.beginPath()
-          if (clip.fadeIn > 0) {
-            ctx.moveTo(clipX, y + LANE_HEIGHT - 4)
-            ctx.lineTo(clipX + clip.fadeIn * pixelsPerSecond, y + 4)
-          }
-          if (clip.fadeOut > 0) {
-            ctx.moveTo(clipX + clipW - clip.fadeOut * pixelsPerSecond, y + 4)
-            ctx.lineTo(clipX + clipW, y + LANE_HEIGHT - 4)
-          }
-          ctx.stroke()
-        }
-
-        if (clip.id === selectedClipId || clip.id === drag.draggingClipId) {
-          ctx.strokeStyle = '#ff5b21'
-          ctx.lineWidth = 2
-          ctx.strokeRect(clipX + 1, y + 3, Math.max(2, clipW - 2), LANE_HEIGHT - 6)
-
-          // Grab affordances: bars on the edges, squares in the top corners.
-          if (clipW >= EDGE_GRAB_PX * 3) {
-            ctx.fillStyle = '#ff5b21'
-            ctx.fillRect(clipX, y + 3, EDGE_GRAB_PX, LANE_HEIGHT - 6)
-            ctx.fillRect(clipX + clipW - EDGE_GRAB_PX, y + 3, EDGE_GRAB_PX, LANE_HEIGHT - 6)
-          }
-          if (clipW >= FADE_HANDLE_PX * 3) {
-            ctx.fillStyle = '#e8e0d0'
-            ctx.fillRect(clipX + 1, y + 3, FADE_HANDLE_PX - 2, FADE_HANDLE_PX - 2)
-            ctx.fillRect(
-              clipX + clipW - FADE_HANDLE_PX + 1,
-              y + 3,
-              FADE_HANDLE_PX - 2,
-              FADE_HANDLE_PX - 2
-            )
-          }
-        }
+        drawClip(clip, track, sources[clip.sourceId], laneY)
       }
     })
 
     const playheadX = timeToX(AudioEngine.getInstance().currentTime, view)
     if (playheadX >= 0 && playheadX <= width) {
-      ctx.fillStyle = '#e8e0d0'
+      ctx.fillStyle = BONE
       ctx.fillRect(playheadX - 1, 0, 2, height)
     }
-  }, [tracks, clips, sources, view, width, height, pixelsPerSecond, selectedClipId, drag.draft, drag.draggingClipId])
+  }, [
+    tracks,
+    clips,
+    sources,
+    view,
+    width,
+    height,
+    pixelsPerSecond,
+    selectedClipId,
+    hoverClipId,
+    drag.draft,
+    drag.draggingClipId,
+    drag.isDragging,
+  ])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -197,21 +302,14 @@ export const TrackLanes = ({ width }: { width: number }) => {
     const rect = e.currentTarget.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
-    const lane = laneAtY(y, tracks.length)
-    return { x, y, lane, time: xToTime(x, view) }
+    return { x, y, lane: laneAtY(y, tracks.length), time: xToTime(x, view) }
   }
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const { x, y, lane, time } = locate(e)
     const track = lane === null ? null : tracks[lane]
+    const hit = track ? hitTest(clips, track.id, lane!, view, x, y) : null
 
-    if (!track) {
-      dispatch(selectClip(null))
-      dispatch(seek(Math.max(0, Math.min(time, duration))))
-      return
-    }
-
-    const hit = hitTest(clips, track.id, lane!, view, x, y)
     if (!hit) {
       dispatch(selectClip(null))
       dispatch(seek(Math.max(0, Math.min(time, duration))))
@@ -235,7 +333,9 @@ export const TrackLanes = ({ width }: { width: number }) => {
     }
 
     const track = lane === null ? null : tracks[lane]
-    setHoverZone(track ? (hitTest(clips, track.id, lane!, view, x, y)?.zone ?? null) : null)
+    const hit = track ? hitTest(clips, track.id, lane!, view, x, y) : null
+    setHoverZone(hit?.zone ?? null)
+    setHoverClipId(hit?.clipId ?? null)
   }
 
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -271,7 +371,10 @@ export const TrackLanes = ({ width }: { width: number }) => {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={() => drag.end()}
-      onPointerLeave={() => setHoverZone(null)}
+      onPointerLeave={() => {
+        setHoverZone(null)
+        setHoverClipId(null)
+      }}
     />
   )
 }

@@ -259,40 +259,50 @@ body {
   gap: 2px;
 }
 
-/* Track strip ------------------------------------------------------------- */
+/* Channel strip ----------------------------------------------------------- */
 
 /* Exactly one lane tall, so a track's controls line up with its waveform. */
-.track-controls {
+.strip {
   height: var(--lane-height);
   display: grid;
-  grid-template-rows: auto auto auto;
-  align-content: center;
-  gap: calc(var(--unit) * 1.5);
-  padding: 0 calc(var(--unit) * 3);
+  /* Colour block, then everything else. */
+  grid-template-columns: 30px 1fr;
   border-bottom: 1px solid var(--tone-line);
+  transition: background 0.12s linear;
+
+  &:hover {
+    background: var(--tone-2);
+  }
 }
 
-.track-controls__top {
+/* Same colour the track's clips are drawn in - this is what visually joins
+   the strip to its lane. Carries the album art when the file had any. */
+.strip__tab {
+  background-size: cover;
+  background-position: center;
+}
+
+.strip__body {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  justify-content: center;
   gap: calc(var(--unit) * 2);
+  padding: 0 calc(var(--unit) * 3);
   min-width: 0;
 }
 
-.track-controls__art {
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
+.strip__row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: var(--tone-3);
-  border-radius: var(--radius);
-  font-size: 10px;
-  background-size: cover;
+  gap: calc(var(--unit) * 1.5);
+  min-width: 0;
 }
 
-.track-controls__name {
+.strip__row--controls {
+  gap: calc(var(--unit) * 2);
+}
+
+.strip__name {
   flex: 1;
   min-width: 0;
   font-size: 12px;
@@ -302,16 +312,11 @@ body {
   text-overflow: ellipsis;
 }
 
-.track-controls__buttons {
-  display: flex;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.track-controls__btn {
+.strip__btn {
   @include label;
   width: 22px;
   height: 22px;
+  flex-shrink: 0;
   background: var(--tone-3);
   color: var(--bone-dim);
   border: 1px solid var(--tone-line);
@@ -323,7 +328,7 @@ body {
     color: var(--bone);
   }
 
-  &.active {
+  &.is-on {
     background: var(--accent);
     border-color: var(--accent);
     color: var(--tone-void);
@@ -335,7 +340,7 @@ body {
   }
 }
 
-.track-controls__delete {
+.strip__remove {
   width: 22px;
   height: 22px;
   flex-shrink: 0;
@@ -355,6 +360,16 @@ body {
     outline: 2px solid var(--accent);
     outline-offset: 1px;
   }
+}
+
+/* Meter and fader share the second row, so the strip stays one lane tall. */
+.strip__row--controls .meter {
+  flex: 0 0 44%;
+}
+
+.strip__fader {
+  flex: 1;
+  min-width: 0;
 }
 
 /* Faders ------------------------------------------------------------------ */
