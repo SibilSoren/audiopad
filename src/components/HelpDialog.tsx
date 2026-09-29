@@ -43,8 +43,10 @@ export const HelpDialog = ({ isOpen, onClose }: HelpDialogProps) => {
 
           <h3>Editing</h3>
           <ul>
-            <li>Click a clip to select it</li>
-            <li>Split it at the playhead, or delete it outright</li>
+            <li>Click a clip to select it, then drag its body to move it</li>
+            <li>Drag either edge to trim — the audio stays put, you reveal or hide it</li>
+            <li>Drag a square in the top corners to set a fade</li>
+            <li>Split at the playhead, or delete the clip outright</li>
             <li>A split copies no audio — both halves share one buffer</li>
           </ul>
 

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppDispatch, useAppSelector } from '../store/store'
 import { seek } from '../store/transportSlice'
 import { selectClip } from '../store/uiSlice'
 import { selectClips, selectTracks, selectSources, selectDuration } from '../store/selectors'
 import { AudioEngine } from '../audio/AudioEngine'
-import { clipAt } from '../audio/clipOps'
+import { hitTest, cursorForZone, EDGE_GRAB_PX, FADE_HANDLE_PX, type HitZone } from '../lib/clipHit'
+import { useClipDrag } from '../hooks/useClipDrag'
 import {
   LANE_HEIGHT,
   lanesHeight,
@@ -37,6 +38,9 @@ export const TrackLanes = ({ width }: { width: number }) => {
   const isPlaying = useAppSelector((state) => state.transport.isPlaying)
   const selectedClipId = useAppSelector((state) => state.ui.selectedClipId)
   const { pixelsPerSecond, viewStart } = useAppSelector((state) => state.ui)
+
+  const drag = useClipDrag()
+  const [hoverZone, setHoverZone] = useState<HitZone | null>(null)
 
   const view: Viewport = useMemo(
     () => ({ viewStart, pixelsPerSecond, width }),
@@ -71,8 +75,11 @@ export const TrackLanes = ({ width }: { width: number }) => {
       ctx.fillStyle = '#211e1b'
       ctx.fillRect(0, y + LANE_HEIGHT - 1, width, 1)
 
-      for (const clip of clips) {
-        if (clip.trackId !== track.id) continue
+      for (const stored of clips) {
+        if (stored.trackId !== track.id) continue
+        // While dragging, draw the preview rather than the committed clip.
+        const clip =
+          drag.draft && drag.draggingClipId === stored.id ? drag.draft : stored
         // Skip clips entirely outside the visible window.
         if (clip.start + clip.duration < from || clip.start > to) continue
 
@@ -128,10 +135,27 @@ export const TrackLanes = ({ width }: { width: number }) => {
           ctx.stroke()
         }
 
-        if (clip.id === selectedClipId) {
+        if (clip.id === selectedClipId || clip.id === drag.draggingClipId) {
           ctx.strokeStyle = '#ff5b21'
           ctx.lineWidth = 2
           ctx.strokeRect(clipX + 1, y + 3, Math.max(2, clipW - 2), LANE_HEIGHT - 6)
+
+          // Grab affordances: bars on the edges, squares in the top corners.
+          if (clipW >= EDGE_GRAB_PX * 3) {
+            ctx.fillStyle = '#ff5b21'
+            ctx.fillRect(clipX, y + 3, EDGE_GRAB_PX, LANE_HEIGHT - 6)
+            ctx.fillRect(clipX + clipW - EDGE_GRAB_PX, y + 3, EDGE_GRAB_PX, LANE_HEIGHT - 6)
+          }
+          if (clipW >= FADE_HANDLE_PX * 3) {
+            ctx.fillStyle = '#e8e0d0'
+            ctx.fillRect(clipX + 1, y + 3, FADE_HANDLE_PX - 2, FADE_HANDLE_PX - 2)
+            ctx.fillRect(
+              clipX + clipW - FADE_HANDLE_PX + 1,
+              y + 3,
+              FADE_HANDLE_PX - 2,
+              FADE_HANDLE_PX - 2
+            )
+          }
         }
       }
     })
@@ -141,7 +165,7 @@ export const TrackLanes = ({ width }: { width: number }) => {
       ctx.fillStyle = '#e8e0d0'
       ctx.fillRect(playheadX - 1, 0, 2, height)
     }
-  }, [tracks, clips, sources, view, width, height, pixelsPerSecond, selectedClipId])
+  }, [tracks, clips, sources, view, width, height, pixelsPerSecond, selectedClipId, drag.draft, drag.draggingClipId])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -168,15 +192,80 @@ export const TrackLanes = ({ width }: { width: number }) => {
     return () => cancelAnimationFrame(rafRef.current)
   }, [isPlaying, draw])
 
-  const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  /** Pointer position in canvas coordinates, plus the lane it falls in. */
+  const locate = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
-    const time = xToTime(e.clientX - rect.left, view)
-    dispatch(seek(Math.max(0, Math.min(time, duration))))
-
-    const lane = laneAtY(e.clientY - rect.top, tracks.length)
-    const track = lane === null ? null : tracks[lane]
-    dispatch(selectClip(track ? (clipAt(clips, track.id, time)?.id ?? null) : null))
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const lane = laneAtY(y, tracks.length)
+    return { x, y, lane, time: xToTime(x, view) }
   }
 
-  return <canvas ref={canvasRef} className="lanes" onClick={onClick} />
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const { x, y, lane, time } = locate(e)
+    const track = lane === null ? null : tracks[lane]
+
+    if (!track) {
+      dispatch(selectClip(null))
+      dispatch(seek(Math.max(0, Math.min(time, duration))))
+      return
+    }
+
+    const hit = hitTest(clips, track.id, lane!, view, x, y)
+    if (!hit) {
+      dispatch(selectClip(null))
+      dispatch(seek(Math.max(0, Math.min(time, duration))))
+      return
+    }
+
+    const clip = clips.find((c) => c.id === hit.clipId)
+    if (!clip) return
+
+    dispatch(selectClip(clip.id))
+    e.currentTarget.setPointerCapture(e.pointerId)
+    drag.begin(clip, hit.zone, time, e.clientX, sources[clip.sourceId])
+  }
+
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const { x, y, lane, time } = locate(e)
+
+    if (drag.isDragging) {
+      drag.move(time, e.clientX)
+      return
+    }
+
+    const track = lane === null ? null : tracks[lane]
+    setHoverZone(track ? (hitTest(clips, track.id, lane!, view, x, y)?.zone ?? null) : null)
+  }
+
+  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const wasDrag = drag.end()
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+    // A press that never moved is a click, so it still seeks.
+    if (!wasDrag) {
+      const { time } = locate(e)
+      dispatch(seek(Math.max(0, Math.min(time, duration))))
+    }
+  }
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="lanes"
+      style={{
+        cursor: drag.isDragging
+          ? drag.zone === 'body'
+            ? 'grabbing'
+            : cursorForZone(drag.zone)
+          : cursorForZone(hoverZone),
+      }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={() => drag.end()}
+      onPointerLeave={() => setHoverZone(null)}
+    />
+  )
 }

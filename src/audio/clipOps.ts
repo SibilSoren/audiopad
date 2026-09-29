@@ -110,6 +110,35 @@ export function setFades(clip: Clip, fadeIn: number, fadeOut: number): Clip {
   return { ...clip, fadeIn: safeIn, fadeOut: safeOut }
 }
 
+/**
+ * Apply a drag gesture to a clip.
+ *
+ * `delta` is how far the pointer has moved, in seconds. Keeping this pure
+ * means the whole interaction can be tested without synthesising pointer
+ * events, and the live preview during a drag is computed the same way as the
+ * value finally committed - so what you see while dragging is what you get.
+ */
+export function applyDrag(
+  original: Clip,
+  zone: "body" | "trim-start" | "trim-end" | "fade-in" | "fade-out",
+  delta: number,
+  sourceDuration: number
+): Clip {
+  switch (zone) {
+    case "body":
+      return moveClip(original, original.start + delta)
+    case "trim-start":
+      return trimStart(original, original.start + delta, sourceDuration)
+    case "trim-end":
+      return trimEnd(original, clipEnd(original) + delta, sourceDuration)
+    case "fade-in":
+      return setFades(original, original.fadeIn + delta, original.fadeOut)
+    case "fade-out":
+      // The handle is at the right edge, so dragging left lengthens the fade.
+      return setFades(original, original.fadeIn, original.fadeOut - delta)
+  }
+}
+
 /** The topmost clip at a point on a track, if any. */
 export function clipAt(clips: readonly Clip[], trackId: string, time: number): Clip | null {
   for (let i = clips.length - 1; i >= 0; i--) {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
+  applyDrag,
   splitClip,
   moveClip,
   trimStart,
@@ -208,5 +209,61 @@ describe("clipAt", () => {
       clip({ id: "over", start: 2, duration: 4 }),
     ]
     expect(clipAt(overlapping, "t1", 3)?.id).toBe("over")
+  })
+})
+
+describe("applyDrag", () => {
+  it("slides the clip when dragging the body", () => {
+    expect(applyDrag(clip({ start: 5 }), "body", 3, 60).start).toBe(8)
+  })
+
+  it("drags the body backwards", () => {
+    expect(applyDrag(clip({ start: 5 }), "body", -2, 60).start).toBe(3)
+  })
+
+  it("will not drag a clip before zero", () => {
+    expect(applyDrag(clip({ start: 1 }), "body", -10, 60).start).toBe(0)
+  })
+
+  it("moves the left edge and the source window together", () => {
+    const dragged = applyDrag(clip({ start: 0, offset: 5, duration: 10 }), "trim-start", 2, 60)
+    expect(dragged.start).toBe(2)
+    expect(dragged.offset).toBe(7)
+    expect(clipEnd(dragged)).toBe(10)
+  })
+
+  it("moves the right edge", () => {
+    expect(applyDrag(clip({ duration: 10 }), "trim-end", -3, 60).duration).toBe(7)
+  })
+
+  it("keeps a trim inside the source", () => {
+    const dragged = applyDrag(clip({ offset: 55, duration: 5 }), "trim-end", 999, 60)
+    expect(dragged.duration).toBe(5)
+  })
+
+  it("lengthens the fade-in as it is dragged right", () => {
+    expect(applyDrag(clip(), "fade-in", 2, 60).fadeIn).toBe(2)
+  })
+
+  // The fade-out handle lives at the right edge, so left means longer.
+  it("lengthens the fade-out as it is dragged left", () => {
+    expect(applyDrag(clip(), "fade-out", -2, 60).fadeOut).toBe(2)
+  })
+
+  it("clamps a fade to the clip", () => {
+    expect(applyDrag(clip({ duration: 4 }), "fade-in", 99, 60).fadeIn).toBe(4)
+  })
+
+  it("never returns a negative fade", () => {
+    expect(applyDrag(clip(), "fade-in", -5, 60).fadeIn).toBe(0)
+  })
+
+  // A drag preview is computed from the original each move, so it must be
+  // idempotent for a given delta rather than accumulating.
+  it("is computed from the original, not applied repeatedly", () => {
+    const original = clip({ start: 5 })
+    expect(applyDrag(applyDrag(original, "body", 3, 60), "body", 3, 60).start).toBe(
+      applyDrag(original, "body", 6, 60).start
+    )
   })
 })
