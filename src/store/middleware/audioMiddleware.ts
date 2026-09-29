@@ -19,7 +19,7 @@ interface AppState {
   tracks: TracksSliceState;
 }
 
-export const audioMiddleware: Middleware<{}, AppState> = (store) => (next) => (action) => {
+export const audioMiddleware: Middleware<object, AppState> = (store) => (next) => (action) => {
   const engine = AudioEngine.getInstance();
   
   // Process action first for state updates

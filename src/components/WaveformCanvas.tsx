@@ -3,6 +3,8 @@ import { useAppSelector, useAppDispatch } from '../store/store';
 import { AudioEngine } from '../audio/AudioEngine';
 import { setCurrentTime } from '../store/transportSlice';
 
+const WAVE_COLORS = ['#a855f7', '#ef4444', '#facc15', '#4ade80', '#3b82f6', '#f97316'];
+
 export const WaveformCanvas = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -14,8 +16,6 @@ export const WaveformCanvas = () => {
   
   const requestRef = useRef<number>(0);
   
-  const waveColors = ['#a855f7', '#ef4444', '#facc15', '#4ade80', '#3b82f6', '#f97316'];
-
   const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas || trackIds.length === 0 || duration <= 0) return;
@@ -81,7 +81,7 @@ export const WaveformCanvas = () => {
       
       const y = rulerHeight + (index * trackHeight);
       const centerY = y + trackHeight / 2;
-      const color = waveColors[index % waveColors.length];
+      const color = WAVE_COLORS[index % WAVE_COLORS.length];
       
       // Track separator line
       if (index > 0) {
@@ -134,10 +134,7 @@ export const WaveformCanvas = () => {
     ctx.closePath();
     ctx.fill();
     
-    if (isPlaying) {
-      requestRef.current = requestAnimationFrame(draw);
-    }
-  }, [tracks, trackIds, isPlaying, duration, waveColors]);
+  }, [tracks, trackIds, duration]);
 
   useEffect(() => {
     const resizeObserver = new ResizeObserver(() => {
@@ -157,9 +154,15 @@ export const WaveformCanvas = () => {
 
   useEffect(() => {
     draw();
-    if (isPlaying) {
-      requestRef.current = requestAnimationFrame(draw);
-    }
+
+    if (!isPlaying) return;
+
+    const tick = () => {
+      draw();
+      requestRef.current = requestAnimationFrame(tick);
+    };
+    requestRef.current = requestAnimationFrame(tick);
+
     return () => cancelAnimationFrame(requestRef.current);
   }, [isPlaying, draw]);
 

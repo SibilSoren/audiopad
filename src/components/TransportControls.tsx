@@ -30,8 +30,11 @@ export const TransportControls = ({ onHelpClick }: TransportControlsProps) => {
         if (isPlaying) {
             rafRef.current = requestAnimationFrame(updateTime);
         } else {
-            // Update once when stopped to show correct time
-            setDisplayTime(AudioEngine.getInstance().currentTime);
+            // One frame to settle the clock on the paused position. Scheduled
+            // rather than set synchronously, which would cascade a re-render.
+            rafRef.current = requestAnimationFrame(() => {
+                setDisplayTime(AudioEngine.getInstance().currentTime);
+            });
         }
 
         return () => {

@@ -14,14 +14,14 @@ function App() {
   const dispatch = useAppDispatch();
   const isPlaying = useAppSelector(state => state.transport.isPlaying);
   const trackIds = useAppSelector(state => state.tracks.allIds);
-  const [showHelp, setShowHelp] = useState(false);
+  // Read during initialisation rather than setting state from an effect, which
+  // would render once with the dialog closed and then immediately again.
+  const [showHelp, setShowHelp] = useState(
+    () => !localStorage.getItem('audiowave-visited')
+  );
 
   useEffect(() => {
-    const hasVisited = localStorage.getItem('audiowave-visited');
-    if (!hasVisited) {
-      setShowHelp(true);
-      localStorage.setItem('audiowave-visited', 'true');
-    }
+    localStorage.setItem('audiowave-visited', 'true');
   }, []);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {

@@ -54,10 +54,7 @@ export const TrackRow = ({ id }: TrackRowProps) => {
     ctx.fillStyle = '#e5e5e5';
     ctx.fillRect(playheadX - 1, 0, 2, height);
     
-    if (isPlaying) {
-      requestRef.current = requestAnimationFrame(draw);
-    }
-  }, [track, isPlaying, duration, waveColor]);
+  }, [track, duration, waveColor]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -75,9 +72,15 @@ export const TrackRow = ({ id }: TrackRowProps) => {
 
   useEffect(() => {
     draw();
-    if (isPlaying) {
-      requestRef.current = requestAnimationFrame(draw);
-    }
+
+    if (!isPlaying) return;
+
+    const tick = () => {
+      draw();
+      requestRef.current = requestAnimationFrame(tick);
+    };
+    requestRef.current = requestAnimationFrame(tick);
+
     return () => cancelAnimationFrame(requestRef.current);
   }, [isPlaying, draw]);
 
